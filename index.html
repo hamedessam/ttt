@@ -21,8 +21,10 @@
     --vodafone:#d1495f;
     --zizo:#b5722e;
     --makram:#6a4fa0;
+    --canteen:#c77f2e;
     --unpaid:#c9c2b4;
     --unpaid-bg:#f6f3ec;
+    --partial:#d1a53d;
   }
   *{box-sizing:border-box;}
   body{
@@ -112,14 +114,23 @@
     font-size:13px;
     color:#6b6455;
   }
-  input[type=number]{
-    width:80px;
+  input[type=number], input[type=text]{
     padding:7px 10px;
     border:1.5px solid #e0dacb;
     border-radius:8px;
     font-family:'Cairo',sans-serif;
     font-size:14px;
     text-align:center;
+  }
+  input[type=number]{width:80px;}
+  select{
+    padding:7px 8px;
+    border:1.5px solid #e0dacb;
+    border-radius:8px;
+    font-family:'Cairo',sans-serif;
+    font-size:13px;
+    background:#fff;
+    color:var(--court-dark);
   }
   button.primary{
     background:var(--court);
@@ -144,56 +155,105 @@
     font-size:13px;
     cursor:pointer;
   }
-  .player-row{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
-    padding:10px 12px;
-    border-radius:10px;
-    background:var(--unpaid-bg);
-    border:1.5px solid #eae5d8;
-    margin-bottom:8px;
-    transition:background .15s, border-color .15s;
-  }
-  .player-row.paid{
-    background:#eef7ee;
-    border-color:var(--cash);
-  }
-  .player-row .pname{
-    font-weight:700;
-    font-size:14.5px;
-    min-width:90px;
-  }
-  .methods{
-    display:flex;
-    gap:6px;
-    flex-wrap:wrap;
-  }
-  .methods button{
-    border:1.5px solid #ddd6c6;
-    background:#fff;
-    color:#8a8168;
-    font-family:'Cairo',sans-serif;
-    font-size:12.5px;
-    font-weight:600;
-    padding:6px 10px;
-    border-radius:20px;
-    cursor:pointer;
-    transition:all .12s;
-  }
-  .methods button.sel-cash{background:var(--cash); border-color:var(--cash); color:#fff;}
-  .methods button.sel-instapay{background:var(--instapay); border-color:var(--instapay); color:#fff;}
-  .methods button.sel-vodafone{background:var(--vodafone); border-color:var(--vodafone); color:#fff;}
-  .methods button.sel-zizo{background:var(--zizo); border-color:var(--zizo); color:#fff;}
-  .methods button.sel-makram{background:var(--makram); border-color:var(--makram); color:#fff;}
-  .methods button:hover{border-color:var(--court);}
   .empty-hint{
     color:#a89e88;
     font-size:13.5px;
     text-align:center;
     padding:20px 0;
   }
+
+  /* Tournament type selector */
+  .type-select{
+    display:flex;
+    gap:8px;
+  }
+  .type-btn{
+    flex:1;
+    padding:12px;
+    border-radius:10px;
+    border:2px solid #e0dacb;
+    background:#fff;
+    font-family:'Cairo',sans-serif;
+    font-weight:700;
+    font-size:14px;
+    color:#a08f77;
+    cursor:pointer;
+    text-align:center;
+  }
+  .type-btn.active-lowd{background:var(--vodafone); border-color:var(--vodafone); color:#fff;}
+  .type-btn.active-beginners{background:var(--instapay); border-color:var(--instapay); color:#fff;}
+  .type-note{
+    font-size:12.5px;
+    color:#8a8168;
+    margin-top:8px;
+    text-align:center;
+  }
+
+  /* Players / payments */
+  .player-row2{
+    padding:10px 12px;
+    border-radius:10px;
+    background:var(--unpaid-bg);
+    border:1.5px solid #eae5d8;
+    margin-bottom:8px;
+  }
+  .player-row2.paid{background:#eef7ee; border-color:var(--cash);}
+  .player-row2.partial{background:#fdf6e6; border-color:var(--partial);}
+  .player-row2.over{background:#fdf1e4; border-color:var(--canteen);}
+  .prow-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:6px;
+  }
+  .pname{font-weight:700; font-size:14.5px;}
+  .pstatus{font-size:12px; color:#8a8168; font-weight:600;}
+  .player-row2.paid .pstatus{color:var(--cash);}
+  .player-row2.partial .pstatus{color:var(--partial);}
+  .player-row2.over .pstatus{color:var(--canteen);}
+  .pay-chips{
+    display:flex;
+    flex-wrap:wrap;
+    gap:5px;
+    margin-bottom:6px;
+  }
+  .pay-chip{
+    background:#fff;
+    border:1px solid #e0dacb;
+    border-radius:14px;
+    padding:3px 8px;
+    font-size:11.5px;
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+  }
+  .pay-chip button{
+    background:none;
+    border:none;
+    color:#c9877a;
+    cursor:pointer;
+    font-size:13px;
+    padding:0;
+    line-height:1;
+  }
+  .no-pay{font-size:11.5px; color:#c2baa8;}
+  .add-pay-row{
+    display:flex;
+    gap:6px;
+  }
+  .add-pay-row select{flex:1.2;}
+  .add-pay-row input{flex:1; width:auto;}
+  .add-pay-row button{
+    background:var(--court);
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    padding:6px 12px;
+    font-family:'Cairo',sans-serif;
+    font-size:12.5px;
+    cursor:pointer;
+  }
+
   .totals{
     display:grid;
     grid-template-columns:1fr 1fr 1fr;
@@ -205,21 +265,14 @@
     padding:12px;
     text-align:center;
   }
-  .tbox .num{
-    font-size:20px;
-    font-weight:900;
-    color:var(--court);
-  }
-  .tbox .lbl{
-    font-size:12px;
-    color:#8a8168;
-    margin-top:2px;
-  }
+  .tbox .num{font-size:18px; font-weight:900; color:var(--court);}
+  .tbox .lbl{font-size:11.5px; color:#8a8168; margin-top:2px;}
   .tbox.cash .num{color:var(--cash);}
   .tbox.instapay .num{color:var(--instapay);}
   .tbox.vodafone .num{color:var(--vodafone);}
   .tbox.zizo .num{color:var(--zizo);}
   .tbox.makram .num{color:var(--makram);}
+  .tbox.canteen .num{color:var(--canteen);}
   .grand{
     margin-top:12px;
     background:var(--court);
@@ -230,23 +283,23 @@
   }
   .grand .num{font-size:26px; font-weight:900; color:var(--ball);}
   .grand .lbl{font-size:12.5px; opacity:.85; margin-top:2px;}
-  .unpaid-list{
-    font-size:13.5px;
-    color:var(--vodafone);
-    line-height:1.9;
+  .canteen-note{
+    text-align:center;
+    font-size:12.5px;
+    color:var(--canteen);
+    margin-top:8px;
+    font-weight:600;
   }
+  .unpaid-list{font-size:13.5px; color:var(--vodafone); line-height:1.9;}
+
+  /* Groups/matches */
   .group-block{
     border:1.5px solid #eae5d8;
     border-radius:12px;
     padding:12px;
     margin-bottom:14px;
   }
-  .group-block h3{
-    margin:0 0 10px;
-    font-size:14.5px;
-    color:var(--court);
-    font-weight:700;
-  }
+  .group-block h3{margin:0 0 10px; font-size:14.5px; color:var(--court); font-weight:700;}
   .match-row{
     display:flex;
     align-items:center;
@@ -270,76 +323,93 @@
     min-width:70px;
     text-align:center;
   }
-  .team-btn.winner{
-    background:var(--cash);
-    border-color:var(--cash);
-    color:#fff;
-  }
-  .score-inputs{
-    display:flex;
-    align-items:center;
-    gap:4px;
-  }
-  .score-inputs input{
-    width:42px;
-    padding:5px 4px;
-    border:1.5px solid #e0dacb;
-    border-radius:6px;
-    font-family:'Cairo',sans-serif;
-    font-size:13px;
-    text-align:center;
-  }
+  .team-btn.winner{background:var(--cash); border-color:var(--cash); color:#fff;}
+  .score-inputs{display:flex; align-items:center; gap:4px;}
+  .score-inputs input{width:42px; padding:5px 4px; font-size:13px;}
   .score-inputs span{color:#a89e88; font-size:12px;}
-  .standings-table{
-    width:100%;
-    border-collapse:collapse;
-    margin-top:8px;
-    font-size:13.5px;
-  }
+  .standings-table{width:100%; border-collapse:collapse; margin-top:8px; font-size:13.5px;}
   .standings-table th{
-    text-align:right;
-    color:#8a8168;
-    font-size:11.5px;
-    font-weight:600;
-    padding:4px 6px;
-    border-bottom:1.5px solid #eae5d8;
+    text-align:right; color:#8a8168; font-size:11.5px; font-weight:600;
+    padding:4px 6px; border-bottom:1.5px solid #eae5d8;
   }
-  .standings-table td{
-    padding:6px 6px;
-    border-bottom:1px solid #f1ede2;
-  }
+  .standings-table td{padding:6px 6px; border-bottom:1px solid #f1ede2;}
   .standings-table tr.rank1 td:first-child{color:var(--cash); font-weight:900;}
   .standings-table tr.rank2 td:first-child{color:var(--instapay); font-weight:900;}
-  .tie-row{
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:6px;
-    padding:4px 0;
-  }
+  .standings-table tr.rank-out td{color:#b89e8f;}
+  .tie-row{display:flex; align-items:center; justify-content:center; gap:6px; padding:4px 0;}
   .tie-row button{
-    background:none;
-    border:1px solid #e0dacb;
-    color:#a08f77;
-    font-size:11.5px;
-    padding:3px 8px;
-    border-radius:14px;
-    cursor:pointer;
-    font-family:'Cairo',sans-serif;
+    background:none; border:1px solid #e0dacb; color:#a08f77;
+    font-size:11.5px; padding:3px 8px; border-radius:14px; cursor:pointer; font-family:'Cairo',sans-serif;
   }
-  .reset-order{
-    text-align:center;
-    margin-top:6px;
-  }
+  .reset-order{text-align:center; margin-top:6px;}
   .reset-order button{
-    background:none;
-    border:none;
-    color:#a89e88;
-    font-size:12px;
-    text-decoration:underline;
-    cursor:pointer;
-    font-family:'Cairo',sans-serif;
+    background:none; border:none; color:#a89e88; font-size:12px;
+    text-decoration:underline; cursor:pointer; font-family:'Cairo',sans-serif;
   }
+
+  /* Archive */
+  .history-item{
+    border:1.5px solid #eae5d8;
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:8px;
+  }
+  .history-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    cursor:pointer;
+  }
+  .history-title{font-weight:700; font-size:14px;}
+  .history-tag{
+    font-size:11px;
+    padding:2px 8px;
+    border-radius:12px;
+    font-weight:700;
+    color:#fff;
+  }
+  .history-tag.lowd{background:var(--vodafone);}
+  .history-tag.beginners{background:var(--instapay);}
+  .history-actions{display:flex; gap:6px; align-items:center;}
+  .history-actions button{
+    background:none; border:1px solid #e0dacb; color:#a08f77;
+    font-size:12px; padding:4px 10px; border-radius:14px; cursor:pointer; font-family:'Cairo',sans-serif;
+  }
+  .history-detail{
+    margin-top:10px;
+    padding-top:10px;
+    border-top:1px dashed #e0dacb;
+    display:none;
+  }
+  .history-detail.open{display:block;}
+  .hd-summary{
+    display:flex;
+    gap:14px;
+    flex-wrap:wrap;
+    font-size:12.5px;
+    color:#6b6455;
+    margin-bottom:10px;
+  }
+  .hd-summary b{color:var(--court);}
+
+  /* Drop tracker */
+  .drop-item{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:8px 10px;
+    border-radius:8px;
+    background:var(--unpaid-bg);
+    margin-bottom:6px;
+    font-size:13.5px;
+  }
+  .drop-item.danger{background:#fdeceb; border:1px solid var(--vodafone);}
+  .drop-count{
+    font-size:12px;
+    font-weight:700;
+    color:#8a8168;
+  }
+  .drop-item.danger .drop-count{color:var(--vodafone);}
 </style>
 </head>
 <body>
@@ -351,6 +421,15 @@
 </header>
 
 <div class="wrap">
+
+  <div class="card" id="typeCard">
+    <h2>0. نوع البطولة</h2>
+    <div class="type-select">
+      <button class="type-btn" id="btnLowd" onclick="setType('lowd')">بطولة Low D (الأربع)</button>
+      <button class="type-btn" id="btnBeginners" onclick="setType('beginners')">بطولة Beginners (الاتنين)</button>
+    </div>
+    <div class="type-note" id="typeNote">اختار نوع البطولة الأول</div>
+  </div>
 
   <div class="card" id="pasteCard">
     <h2>1. ليستة التيمات</h2>
@@ -381,14 +460,15 @@
       <div class="tbox vodafone"><div class="num" id="totVodafone">0</div><div class="lbl">فودافون كاش</div></div>
       <div class="tbox zizo"><div class="num" id="totZizo">0</div><div class="lbl">مع زيزو</div></div>
       <div class="tbox makram"><div class="num" id="totMakram">0</div><div class="lbl">مع مكرم</div></div>
-      <div class="tbox"><div class="num" id="totUnpaidCount">0</div><div class="lbl">لسه ما حاسبوش</div></div>
+      <div class="tbox canteen"><div class="num" id="totCanteen">0</div><div class="lbl">فلوس الكانتين</div></div>
     </div>
     <div class="grand">
       <div class="num" id="totReceived">0</div>
       <div class="lbl" id="totExpectedLbl">من 0 جنيه</div>
     </div>
+    <div class="canteen-note" id="canteenNote"></div>
     <div style="margin-top:12px;" id="unpaidWrap">
-      <h2 style="font-size:13.5px;color:#a89e88;">مستنيين حساب من:</h2>
+      <h2 style="font-size:13.5px;color:#a89e88;">لسه ناقصين حساب:</h2>
       <div class="unpaid-list" id="unpaidList">الكل حاسب 🎉</div>
     </div>
   </div>
@@ -410,12 +490,29 @@
     <div id="groupsOutput" style="margin-top:14px;"></div>
   </div>
 
+  <div class="card" id="archiveCard">
+    <h2>5. أرشيف البطولات</h2>
+    <div class="row-inline">
+      <button class="primary" onclick="saveTournament()">💾 حفظ البطولة الحالية</button>
+      <button class="ghost" onclick="startNewTournament()">بطولة جديدة</button>
+    </div>
+    <div id="historyList" style="margin-top:14px;"></div>
+  </div>
+
+  <div class="card" id="dropCard">
+    <h2>6. متابعة النزول من Low D لـ Beginners (الشهر الحالي)</h2>
+    <div id="dropList"></div>
+  </div>
+
 </div>
 
 <script>
-let players = []; // {name, status: null|'cash'|'instapay'|'vodafone'|'zizo'|'makram'}
+let currentType = null; // 'lowd' | 'beginners' | null
+let players = []; // {name, payments:[{method, amount}]}
 let groups = []; // {name, teams:[...], matches:[{a,b,scoreA,scoreB,manualWinner}], override:null|[...]}
-const STORAGE_KEY = 'tournament-current';
+let history = []; // saved tournaments
+const STORAGE_KEY = 'tournament-current-v2';
+const METHOD_LABELS = {cash:'كاش', instapay:'انستاباي', vodafone:'فودافون كاش', zizo:'مع زيزو', makram:'مع مكرم'};
 
 function setBadge(text){
   document.getElementById('saveBadge').textContent = text;
@@ -424,11 +521,13 @@ function setBadge(text){
 function saveState(){
   try{
     const data = {
+      currentType: currentType,
       teamsInput: document.getElementById('teamsInput').value,
       price: document.getElementById('priceInput').value,
       players: players,
       groupsInput: document.getElementById('groupsInput').value,
-      groups: groups
+      groups: groups,
+      history: history
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     setBadge('اتحفظ ✓');
@@ -438,16 +537,45 @@ function saveState(){
   }
 }
 
+function migratePlayer(p, price){
+  // backward compatibility with the old single-status data model
+  if(p.payments) return p;
+  if(p.status){
+    return {name:p.name, payments:[{method:p.status, amount:price}]};
+  }
+  return {name:p.name, payments:[]};
+}
+
 function loadState(){
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
+    let raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw){
+      // fall back to the older single-tournament storage key so nothing already saved is lost
+      const legacy = localStorage.getItem('tournament-current');
+      if(legacy){
+        const legacyData = JSON.parse(legacy);
+        raw = JSON.stringify({
+          currentType: null,
+          teamsInput: legacyData.teamsInput || '',
+          price: legacyData.price || 130,
+          players: legacyData.players || [],
+          groupsInput: legacyData.groupsInput || '',
+          groups: legacyData.groups || [],
+          history: []
+        });
+      }
+    }
     if(raw){
       const data = JSON.parse(raw);
+      currentType = data.currentType || null;
       document.getElementById('teamsInput').value = data.teamsInput || '';
       document.getElementById('priceInput').value = data.price || 130;
-      players = data.players || [];
+      const price = parseFloat(data.price) || 130;
+      players = (data.players || []).map(p=>migratePlayer(p, price));
       document.getElementById('groupsInput').value = data.groupsInput || '';
       groups = data.groups || [];
+      history = data.history || [];
+      updateTypeUI();
       if(players.length > 0){
         document.getElementById('playersCard').style.display = 'block';
         document.getElementById('totalsCard').style.display = 'block';
@@ -457,9 +585,13 @@ function loadState(){
       if(groups.length > 0){
         renderGroups();
       }
+      renderHistory();
+      renderDropTracker();
       setBadge('اتحفظ ✓');
     } else {
       setBadge('بطولة جديدة');
+      renderHistory();
+      renderDropTracker();
     }
   }catch(e){
     console.error('Load error:', e);
@@ -469,6 +601,31 @@ function loadState(){
 
 window.addEventListener('DOMContentLoaded', loadState);
 
+/* ---------- Tournament type ---------- */
+function setType(t){
+  currentType = (currentType === t) ? null : t;
+  updateTypeUI();
+  saveState();
+}
+
+function updateTypeUI(){
+  const btnLowd = document.getElementById('btnLowd');
+  const btnBeginners = document.getElementById('btnBeginners');
+  btnLowd.classList.remove('active-lowd');
+  btnBeginners.classList.remove('active-beginners');
+  const note = document.getElementById('typeNote');
+  if(currentType === 'lowd'){
+    btnLowd.classList.add('active-lowd');
+    note.textContent = 'هيتم حساب آخر مركزين في كل مجموعة لمتابعة النزول لـ Beginners';
+  } else if(currentType === 'beginners'){
+    btnBeginners.classList.add('active-beginners');
+    note.textContent = 'بطولة Beginners - من غير متابعة نزول';
+  } else {
+    note.textContent = 'اختار نوع البطولة الأول';
+  }
+}
+
+/* ---------- Teams / players ---------- */
 function parseTeams(){
   const raw = document.getElementById('teamsInput').value;
   const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
@@ -476,8 +633,8 @@ function parseTeams(){
 
   lines.forEach(line=>{
     let clean = line
-      .replace(/^\s*\d+\s*[-.)،]?\s*/,'')  // remove leading number + dash/dot
-      .replace(/تيم\s*/,'')                 // remove word "تيم"
+      .replace(/^\s*\d+\s*[-.)،]?\s*/,'')
+      .replace(/تيم\s*/,'')
       .trim();
 
     if(!clean) return;
@@ -491,8 +648,8 @@ function parseTeams(){
       p1 = clean;
       p2 = null;
     }
-    if(p1) newPlayers.push({name:p1, status:null});
-    if(p2) newPlayers.push({name:p2, status:null});
+    if(p1) newPlayers.push({name:p1, payments:[]});
+    if(p2) newPlayers.push({name:p2, payments:[]});
   });
 
   if(newPlayers.length === 0){
@@ -508,31 +665,66 @@ function parseTeams(){
   saveState();
 }
 
+function playerPaid(p){
+  return (p.payments || []).reduce((s,x)=> s + (parseFloat(x.amount) || 0), 0);
+}
+
 function renderPlayers(){
   const list = document.getElementById('playersList');
+  const price = parseFloat(document.getElementById('priceInput').value) || 0;
   if(players.length === 0){
     list.innerHTML = '<div class="empty-hint">مفيش لاعبين لسه</div>';
     return;
   }
   list.innerHTML = players.map((p, i)=>{
-    const paidClass = p.status ? 'paid' : '';
+    const paid = playerPaid(p);
+    let statusClass, statusText;
+    if(paid <= 0){ statusClass='unpaid'; statusText='لسه محاسبش'; }
+    else if(paid < price){ statusClass='partial'; statusText=`ناقص ${(price-paid).toLocaleString()} جنيه`; }
+    else if(paid === price){ statusClass='paid'; statusText='اتحاسب بالكامل ✓'; }
+    else { statusClass='over'; statusText=`زيادة ${(paid-price).toLocaleString()} جنيه`; }
+
+    const chips = (p.payments||[]).map((pay,pi)=>`
+      <span class="pay-chip">${METHOD_LABELS[pay.method]||pay.method}: ${pay.amount} <button onclick="removePayment(${i},${pi})">×</button></span>
+    `).join('') || '<span class="no-pay">مفيش دفعات لسه</span>';
+
     return `
-      <div class="player-row ${paidClass}">
-        <div class="pname">${p.name}</div>
-        <div class="methods">
-          <button class="${p.status==='cash'?'sel-cash':''}" onclick="setStatus(${i},'cash')">كاش</button>
-          <button class="${p.status==='instapay'?'sel-instapay':''}" onclick="setStatus(${i},'instapay')">انستاباي</button>
-          <button class="${p.status==='vodafone'?'sel-vodafone':''}" onclick="setStatus(${i},'vodafone')">فودافون كاش</button>
-          <button class="${p.status==='zizo'?'sel-zizo':''}" onclick="setStatus(${i},'zizo')">مع زيزو</button>
-          <button class="${p.status==='makram'?'sel-makram':''}" onclick="setStatus(${i},'makram')">مع مكرم</button>
+      <div class="player-row2 ${statusClass}">
+        <div class="prow-top">
+          <div class="pname">${p.name}</div>
+          <div class="pstatus">${statusText}</div>
+        </div>
+        <div class="pay-chips">${chips}</div>
+        <div class="add-pay-row">
+          <select id="method-${i}">
+            <option value="cash">كاش</option>
+            <option value="instapay">انستاباي</option>
+            <option value="vodafone">فودافون كاش</option>
+            <option value="zizo">مع زيزو</option>
+            <option value="makram">مع مكرم</option>
+          </select>
+          <input type="number" id="amount-${i}" placeholder="المبلغ">
+          <button onclick="addPayment(${i})">إضافة</button>
         </div>
       </div>
     `;
   }).join('');
 }
 
-function setStatus(i, method){
-  players[i].status = (players[i].status === method) ? null : method;
+function addPayment(i){
+  const methodEl = document.getElementById(`method-${i}`);
+  const amountEl = document.getElementById(`amount-${i}`);
+  const amount = parseFloat(amountEl.value);
+  if(!amount || amount <= 0){ alert('اكتب مبلغ صحيح'); return; }
+  if(!players[i].payments) players[i].payments = [];
+  players[i].payments.push({method:methodEl.value, amount});
+  renderPlayers();
+  updateTotals();
+  saveState();
+}
+
+function removePayment(i, pi){
+  players[i].payments.splice(pi, 1);
   renderPlayers();
   updateTotals();
   saveState();
@@ -540,34 +732,44 @@ function setStatus(i, method){
 
 function updateTotals(){
   const price = parseFloat(document.getElementById('priceInput').value) || 0;
-  const cashCount = players.filter(p=>p.status==='cash').length;
-  const instapayCount = players.filter(p=>p.status==='instapay').length;
-  const vodafoneCount = players.filter(p=>p.status==='vodafone').length;
-  const zizoCount = players.filter(p=>p.status==='zizo').length;
-  const makramCount = players.filter(p=>p.status==='makram').length;
-  const unpaid = players.filter(p=>!p.status);
+  const methodTotals = {cash:0, instapay:0, vodafone:0, zizo:0, makram:0};
+  let received = 0, canteen = 0;
+  const unpaid = [];
 
-  document.getElementById('totCash').textContent = (cashCount*price).toLocaleString();
-  document.getElementById('totInstapay').textContent = (instapayCount*price).toLocaleString();
-  document.getElementById('totVodafone').textContent = (vodafoneCount*price).toLocaleString();
-  document.getElementById('totZizo').textContent = (zizoCount*price).toLocaleString();
-  document.getElementById('totMakram').textContent = (makramCount*price).toLocaleString();
-  document.getElementById('totUnpaidCount').textContent = unpaid.length;
+  players.forEach(p=>{
+    const paid = playerPaid(p);
+    (p.payments||[]).forEach(pay=>{
+      methodTotals[pay.method] = (methodTotals[pay.method]||0) + (parseFloat(pay.amount)||0);
+    });
+    received += paid;
+    if(paid > price) canteen += (paid - price);
+    if(paid < price) unpaid.push({name:p.name, remain:price-paid});
+  });
 
-  const received = (cashCount+instapayCount+vodafoneCount+zizoCount+makramCount)*price;
-  const expected = players.length*price;
+  document.getElementById('totCash').textContent = methodTotals.cash.toLocaleString();
+  document.getElementById('totInstapay').textContent = methodTotals.instapay.toLocaleString();
+  document.getElementById('totVodafone').textContent = methodTotals.vodafone.toLocaleString();
+  document.getElementById('totZizo').textContent = methodTotals.zizo.toLocaleString();
+  document.getElementById('totMakram').textContent = methodTotals.makram.toLocaleString();
+  document.getElementById('totCanteen').textContent = canteen.toLocaleString();
+
+  const expected = players.length * price;
   document.getElementById('totReceived').textContent = received.toLocaleString() + ' جنيه';
   document.getElementById('totExpectedLbl').textContent = `من ${expected.toLocaleString()} جنيه (${players.length} لاعب × ${price})`;
+
+  const canteenNote = document.getElementById('canteenNote');
+  canteenNote.textContent = canteen > 0 ? `منها ${canteen.toLocaleString()} جنيه فلوس كانتين (تتحسب مع مكرم)` : '';
 
   const unpaidList = document.getElementById('unpaidList');
   if(unpaid.length === 0){
     unpaidList.textContent = 'الكل حاسب 🎉';
   } else {
-    unpaidList.innerHTML = unpaid.map(p=>p.name).join(' • ');
+    unpaidList.innerHTML = unpaid.map(p=>`${p.name} (ناقص ${p.remain.toLocaleString()})`).join(' • ');
   }
 }
 
 document.getElementById('priceInput').addEventListener('input', ()=>{
+  renderPlayers();
   updateTotals();
   saveState();
 });
@@ -575,7 +777,7 @@ document.getElementById('priceInput').addEventListener('input', ()=>{
 document.getElementById('teamsInput').addEventListener('input', saveState);
 
 function resetAll(){
-  if(!confirm('هيمسح كل البيانات، متأكد؟')) return;
+  if(!confirm('هيمسح كل بيانات اللاعبين والدفع الحالية، متأكد؟')) return;
   players = [];
   document.getElementById('teamsInput').value = '';
   document.getElementById('playersCard').style.display = 'none';
@@ -583,6 +785,7 @@ function resetAll(){
   saveState();
 }
 
+/* ---------- Groups / matches ---------- */
 function parseGroups(){
   const raw = document.getElementById('groupsInput').value;
   const lines = raw.split('\n').map(l=>l.trim());
@@ -713,7 +916,8 @@ function renderGroups(){
       if(si < standings.length-1 && isTiedUnresolved(g, s, standings[si+1])){
         tieHtml = `<div class="tie-row">🟡 متعادلين <button onclick="swapStanding(${gi},${si})">بدّل الترتيب</button></div>`;
       }
-      const rankClass = si===0 ? 'rank1' : (si===1 ? 'rank2' : '');
+      const outClass = si >= standings.length-2 ? 'rank-out' : '';
+      const rankClass = si===0 ? 'rank1' : (si===1 ? 'rank2' : outClass);
       return `
         <tr class="${rankClass}">
           <td>${si+1}</td>
@@ -744,6 +948,7 @@ function setScore(gi, mi, side, value){
   if(side==='a') m.scoreA = value; else m.scoreB = value;
   renderGroups();
   saveState();
+  renderDropTracker();
 }
 
 function setManualWinner(gi, mi, side){
@@ -751,12 +956,13 @@ function setManualWinner(gi, mi, side){
   const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
   const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
   if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb){
-    return; // score already decides the winner, ignore manual tap
+    return;
   }
   const team = side==='a' ? m.a : m.b;
   m.manualWinner = (m.manualWinner === team) ? null : team;
   renderGroups();
   saveState();
+  renderDropTracker();
 }
 
 function swapStanding(gi, i){
@@ -767,12 +973,14 @@ function swapStanding(gi, i){
   g.override = order;
   renderGroups();
   saveState();
+  renderDropTracker();
 }
 
 function resetOrder(gi){
   groups[gi].override = null;
   renderGroups();
   saveState();
+  renderDropTracker();
 }
 
 document.getElementById('groupsInput').addEventListener('input', saveState);
@@ -784,6 +992,167 @@ function resetGroups(){
   document.getElementById('groupsOutput').innerHTML = '';
   saveState();
 }
+
+/* ---------- Archive ---------- */
+function saveTournament(){
+  if(!currentType){
+    alert('اختار نوع البطولة الأول (Low D ولا Beginners) قبل الحفظ');
+    return;
+  }
+  if(players.length === 0 && groups.length === 0){
+    alert('مفيش بيانات لحفظها لسه');
+    return;
+  }
+  const defaultLabel = new Date().toLocaleDateString('ar-EG');
+  const label = prompt('اسم/تاريخ للبطولة دي (اختياري)', defaultLabel) || defaultLabel;
+  const entry = {
+    id: Date.now().toString(),
+    type: currentType,
+    date: new Date().toISOString(),
+    label: label,
+    teamsInput: document.getElementById('teamsInput').value,
+    price: document.getElementById('priceInput').value,
+    players: JSON.parse(JSON.stringify(players)),
+    groupsInput: document.getElementById('groupsInput').value,
+    groups: JSON.parse(JSON.stringify(groups))
+  };
+  history.unshift(entry);
+  saveState();
+  renderHistory();
+  renderDropTracker();
+  alert('اتحفظت البطولة في الأرشيف ✓ تقدر تبدأ بطولة جديدة دلوقت لو حابب');
+}
+
+function startNewTournament(){
+  if(!confirm('هيمسح شاشة العمل الحالية (البطولات المحفوظة هتفضل زي ماهي في الأرشيف)، متأكد؟')) return;
+  players = [];
+  groups = [];
+  currentType = null;
+  document.getElementById('teamsInput').value = '';
+  document.getElementById('groupsInput').value = '';
+  document.getElementById('playersCard').style.display = 'none';
+  document.getElementById('totalsCard').style.display = 'none';
+  document.getElementById('groupsOutput').innerHTML = '';
+  updateTypeUI();
+  saveState();
+}
+
+function deleteHistoryEntry(id){
+  if(!confirm('هيتمسح نهائي من الأرشيف، متأكد؟')) return;
+  history = history.filter(h=>h.id!==id);
+  saveState();
+  renderHistory();
+  renderDropTracker();
+}
+
+function toggleHistoryDetail(id){
+  const el = document.getElementById('hd-'+id);
+  if(!el) return;
+  el.classList.toggle('open');
+}
+
+function renderHistory(){
+  const list = document.getElementById('historyList');
+  if(history.length === 0){
+    list.innerHTML = '<div class="empty-hint">لسه مفيش بطولات محفوظة</div>';
+    return;
+  }
+  list.innerHTML = history.map(h=>{
+    const price = parseFloat(h.price) || 0;
+    let received = 0, canteen = 0;
+    const methodTotals = {cash:0, instapay:0, vodafone:0, zizo:0, makram:0};
+    (h.players||[]).forEach(p=>{
+      const paid = (p.payments||[]).reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
+      received += paid;
+      if(paid>price) canteen += (paid-price);
+      (p.payments||[]).forEach(pay=>{
+        methodTotals[pay.method] = (methodTotals[pay.method]||0) + (parseFloat(pay.amount)||0);
+      });
+    });
+    const groupsHtml = (h.groups||[]).map(g=>{
+      const standings = computeStandings(g);
+      const rows = standings.map((s,si)=>`<tr><td>${si+1}</td><td>${s.team}</td><td>${s.wins}</td><td>${s.diff>0?'+':''}${s.diff}</td></tr>`).join('');
+      return `<h3 style="font-size:13px;margin:10px 0 4px;">${g.name}</h3>
+        <table class="standings-table">
+          <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }).join('');
+
+    return `
+      <div class="history-item">
+        <div class="history-head" onclick="toggleHistoryDetail('${h.id}')">
+          <div>
+            <span class="history-title">${h.label}</span>
+            <span class="history-tag ${h.type}">${h.type==='lowd'?'Low D':'Beginners'}</span>
+          </div>
+          <div class="history-actions">
+            <button onclick="event.stopPropagation(); deleteHistoryEntry('${h.id}')">حذف</button>
+          </div>
+        </div>
+        <div class="history-detail" id="hd-${h.id}">
+          <div class="hd-summary">
+            <span>عدد اللاعبين: <b>${(h.players||[]).length}</b></span>
+            <span>المستلم: <b>${received.toLocaleString()}</b> من ${(price*(h.players||[]).length).toLocaleString()}</span>
+            <span>كانتين: <b>${canteen.toLocaleString()}</b></span>
+          </div>
+          <div class="hd-summary">
+            <span>كاش: <b>${methodTotals.cash.toLocaleString()}</b></span>
+            <span>انستاباي: <b>${methodTotals.instapay.toLocaleString()}</b></span>
+            <span>فودافون: <b>${methodTotals.vodafone.toLocaleString()}</b></span>
+            <span>زيزو: <b>${methodTotals.zizo.toLocaleString()}</b></span>
+            <span>مكرم: <b>${methodTotals.makram.toLocaleString()}</b></span>
+          </div>
+          ${groupsHtml || '<div class="empty-hint">مفيش مجموعات محفوظة في البطولة دي</div>'}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* ---------- Low D drop tracker ---------- */
+function computeDropCandidates(){
+  const now = new Date();
+  const curMonth = now.getFullYear() + '-' + now.getMonth();
+  const tally = {};
+  history.forEach(entry=>{
+    if(entry.type !== 'lowd') return;
+    const d = new Date(entry.date);
+    const entryMonth = d.getFullYear() + '-' + d.getMonth();
+    if(entryMonth !== curMonth) return;
+    (entry.groups||[]).forEach(g=>{
+      const standings = computeStandings(g);
+      const bottom = standings.slice(-2);
+      bottom.forEach(s=>{
+        const names = s.team.split(' و').map(n=>n.trim()).filter(Boolean);
+        names.forEach(n=>{ tally[n] = (tally[n]||0) + 1; });
+      });
+    });
+  });
+  return tally;
+}
+
+function renderDropTracker(){
+  const el = document.getElementById('dropList');
+  const tally = computeDropCandidates();
+  const names = Object.keys(tally);
+  if(names.length === 0){
+    el.innerHTML = '<div class="empty-hint">مفيش بيانات لسه للشهر الحالي - هتظهر هنا أول ما تحفظ بطولات Low D</div>';
+    return;
+  }
+  names.sort((a,b)=> tally[b]-tally[a]);
+  el.innerHTML = names.map(n=>{
+    const count = tally[n];
+    const danger = count >= 2;
+    return `
+      <div class="drop-item ${danger?'danger':''}">
+        <span>${danger?'🔴':'🟡'} ${n}</span>
+        <span class="drop-count">${count} مرة ${danger?'- ينزل Beginners':''}</span>
+      </div>
+    `;
+  }).join('');
+}
+
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
     navigator.serviceWorker.register('sw.js').catch(e=>console.error('SW error:', e));
