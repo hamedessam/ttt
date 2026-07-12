@@ -190,69 +190,39 @@
   }
 
   /* Players / payments */
-  .player-row2{
+  .player-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
     padding:10px 12px;
     border-radius:10px;
     background:var(--unpaid-bg);
     border:1.5px solid #eae5d8;
     margin-bottom:8px;
+    transition:background .15s, border-color .15s;
   }
-  .player-row2.paid{background:#eef7ee; border-color:var(--cash);}
-  .player-row2.partial{background:#fdf6e6; border-color:var(--partial);}
-  .player-row2.over{background:#fdf1e4; border-color:var(--canteen);}
-  .prow-top{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:6px;
-  }
-  .pname{font-weight:700; font-size:14.5px;}
-  .pstatus{font-size:12px; color:#8a8168; font-weight:600;}
-  .player-row2.paid .pstatus{color:var(--cash);}
-  .player-row2.partial .pstatus{color:var(--partial);}
-  .player-row2.over .pstatus{color:var(--canteen);}
-  .pay-chips{
-    display:flex;
-    flex-wrap:wrap;
-    gap:5px;
-    margin-bottom:6px;
-  }
-  .pay-chip{
+  .player-row.paid{background:#eef7ee; border-color:var(--cash);}
+  .player-row .pname{font-weight:700; font-size:14.5px; min-width:90px;}
+  .methods{display:flex; gap:6px; flex-wrap:wrap;}
+  .methods button{
+    border:1.5px solid #ddd6c6;
     background:#fff;
-    border:1px solid #e0dacb;
-    border-radius:14px;
-    padding:3px 8px;
-    font-size:11.5px;
-    display:inline-flex;
-    align-items:center;
-    gap:4px;
-  }
-  .pay-chip button{
-    background:none;
-    border:none;
-    color:#c9877a;
-    cursor:pointer;
-    font-size:13px;
-    padding:0;
-    line-height:1;
-  }
-  .no-pay{font-size:11.5px; color:#c2baa8;}
-  .add-pay-row{
-    display:flex;
-    gap:6px;
-  }
-  .add-pay-row select{flex:1.2;}
-  .add-pay-row input{flex:1; width:auto;}
-  .add-pay-row button{
-    background:var(--court);
-    color:#fff;
-    border:none;
-    border-radius:8px;
-    padding:6px 12px;
+    color:#8a8168;
     font-family:'Cairo',sans-serif;
     font-size:12.5px;
+    font-weight:600;
+    padding:6px 10px;
+    border-radius:20px;
     cursor:pointer;
+    transition:all .12s;
   }
+  .methods button.sel-cash{background:var(--cash); border-color:var(--cash); color:#fff;}
+  .methods button.sel-instapay{background:var(--instapay); border-color:var(--instapay); color:#fff;}
+  .methods button.sel-vodafone{background:var(--vodafone); border-color:var(--vodafone); color:#fff;}
+  .methods button.sel-zizo{background:var(--zizo); border-color:var(--zizo); color:#fff;}
+  .methods button.sel-makram{background:var(--makram); border-color:var(--makram); color:#fff;}
+  .methods button:hover{border-color:var(--court);}
 
   .totals{
     display:grid;
@@ -272,7 +242,6 @@
   .tbox.vodafone .num{color:var(--vodafone);}
   .tbox.zizo .num{color:var(--zizo);}
   .tbox.makram .num{color:var(--makram);}
-  .tbox.canteen .num{color:var(--canteen);}
   .grand{
     margin-top:12px;
     background:var(--court);
@@ -460,15 +429,14 @@
       <div class="tbox vodafone"><div class="num" id="totVodafone">0</div><div class="lbl">فودافون كاش</div></div>
       <div class="tbox zizo"><div class="num" id="totZizo">0</div><div class="lbl">مع زيزو</div></div>
       <div class="tbox makram"><div class="num" id="totMakram">0</div><div class="lbl">مع مكرم</div></div>
-      <div class="tbox canteen"><div class="num" id="totCanteen">0</div><div class="lbl">فلوس الكانتين</div></div>
+      <div class="tbox"><div class="num" id="totUnpaidCount">0</div><div class="lbl">لسه ما حاسبوش</div></div>
     </div>
     <div class="grand">
       <div class="num" id="totReceived">0</div>
       <div class="lbl" id="totExpectedLbl">من 0 جنيه</div>
     </div>
-    <div class="canteen-note" id="canteenNote"></div>
     <div style="margin-top:12px;" id="unpaidWrap">
-      <h2 style="font-size:13.5px;color:#a89e88;">لسه ناقصين حساب:</h2>
+      <h2 style="font-size:13.5px;color:#a89e88;">مستنيين حساب من:</h2>
       <div class="unpaid-list" id="unpaidList">الكل حاسب 🎉</div>
     </div>
   </div>
@@ -508,7 +476,7 @@
 
 <script>
 let currentType = null; // 'lowd' | 'beginners' | null
-let players = []; // {name, payments:[{method, amount}]}
+let players = []; // {name, status: null|'cash'|'instapay'|'vodafone'|'zizo'|'makram'}
 let groups = []; // {name, teams:[...], matches:[{a,b,scoreA,scoreB,manualWinner}], override:null|[...]}
 let history = []; // saved tournaments
 const STORAGE_KEY = 'tournament-current-v2';
@@ -538,12 +506,13 @@ function saveState(){
 }
 
 function migratePlayer(p, price){
-  // backward compatibility with the old single-status data model
-  if(p.payments) return p;
-  if(p.status){
-    return {name:p.name, payments:[{method:p.status, amount:price}]};
+  // backward compatibility: normalize any older data shape to the simple {name, status} model
+  if('status' in p) return p;
+  if(p.payments && p.payments.length > 0){
+    // came from the brief split-payment version; keep the first method as a simple status
+    return {name:p.name, status:p.payments[0].method};
   }
-  return {name:p.name, payments:[]};
+  return {name:p.name, status:null};
 }
 
 function loadState(){
@@ -648,8 +617,8 @@ function parseTeams(){
       p1 = clean;
       p2 = null;
     }
-    if(p1) newPlayers.push({name:p1, payments:[]});
-    if(p2) newPlayers.push({name:p2, payments:[]});
+    if(p1) newPlayers.push({name:p1, status:null});
+    if(p2) newPlayers.push({name:p2, status:null});
   });
 
   if(newPlayers.length === 0){
@@ -665,66 +634,31 @@ function parseTeams(){
   saveState();
 }
 
-function playerPaid(p){
-  return (p.payments || []).reduce((s,x)=> s + (parseFloat(x.amount) || 0), 0);
-}
-
 function renderPlayers(){
   const list = document.getElementById('playersList');
-  const price = parseFloat(document.getElementById('priceInput').value) || 0;
   if(players.length === 0){
     list.innerHTML = '<div class="empty-hint">مفيش لاعبين لسه</div>';
     return;
   }
   list.innerHTML = players.map((p, i)=>{
-    const paid = playerPaid(p);
-    let statusClass, statusText;
-    if(paid <= 0){ statusClass='unpaid'; statusText='لسه محاسبش'; }
-    else if(paid < price){ statusClass='partial'; statusText=`ناقص ${(price-paid).toLocaleString()} جنيه`; }
-    else if(paid === price){ statusClass='paid'; statusText='اتحاسب بالكامل ✓'; }
-    else { statusClass='over'; statusText=`زيادة ${(paid-price).toLocaleString()} جنيه`; }
-
-    const chips = (p.payments||[]).map((pay,pi)=>`
-      <span class="pay-chip">${METHOD_LABELS[pay.method]||pay.method}: ${pay.amount} <button onclick="removePayment(${i},${pi})">×</button></span>
-    `).join('') || '<span class="no-pay">مفيش دفعات لسه</span>';
-
+    const paidClass = p.status ? 'paid' : '';
     return `
-      <div class="player-row2 ${statusClass}">
-        <div class="prow-top">
-          <div class="pname">${p.name}</div>
-          <div class="pstatus">${statusText}</div>
-        </div>
-        <div class="pay-chips">${chips}</div>
-        <div class="add-pay-row">
-          <select id="method-${i}">
-            <option value="cash">كاش</option>
-            <option value="instapay">انستاباي</option>
-            <option value="vodafone">فودافون كاش</option>
-            <option value="zizo">مع زيزو</option>
-            <option value="makram">مع مكرم</option>
-          </select>
-          <input type="number" id="amount-${i}" placeholder="المبلغ">
-          <button onclick="addPayment(${i})">إضافة</button>
+      <div class="player-row ${paidClass}">
+        <div class="pname">${p.name}</div>
+        <div class="methods">
+          <button class="${p.status==='cash'?'sel-cash':''}" onclick="setStatus(${i},'cash')">كاش</button>
+          <button class="${p.status==='instapay'?'sel-instapay':''}" onclick="setStatus(${i},'instapay')">انستاباي</button>
+          <button class="${p.status==='vodafone'?'sel-vodafone':''}" onclick="setStatus(${i},'vodafone')">فودافون كاش</button>
+          <button class="${p.status==='zizo'?'sel-zizo':''}" onclick="setStatus(${i},'zizo')">مع زيزو</button>
+          <button class="${p.status==='makram'?'sel-makram':''}" onclick="setStatus(${i},'makram')">مع مكرم</button>
         </div>
       </div>
     `;
   }).join('');
 }
 
-function addPayment(i){
-  const methodEl = document.getElementById(`method-${i}`);
-  const amountEl = document.getElementById(`amount-${i}`);
-  const amount = parseFloat(amountEl.value);
-  if(!amount || amount <= 0){ alert('اكتب مبلغ صحيح'); return; }
-  if(!players[i].payments) players[i].payments = [];
-  players[i].payments.push({method:methodEl.value, amount});
-  renderPlayers();
-  updateTotals();
-  saveState();
-}
-
-function removePayment(i, pi){
-  players[i].payments.splice(pi, 1);
+function setStatus(i, method){
+  players[i].status = (players[i].status === method) ? null : method;
   renderPlayers();
   updateTotals();
   saveState();
@@ -732,44 +666,34 @@ function removePayment(i, pi){
 
 function updateTotals(){
   const price = parseFloat(document.getElementById('priceInput').value) || 0;
-  const methodTotals = {cash:0, instapay:0, vodafone:0, zizo:0, makram:0};
-  let received = 0, canteen = 0;
-  const unpaid = [];
+  const cashCount = players.filter(p=>p.status==='cash').length;
+  const instapayCount = players.filter(p=>p.status==='instapay').length;
+  const vodafoneCount = players.filter(p=>p.status==='vodafone').length;
+  const zizoCount = players.filter(p=>p.status==='zizo').length;
+  const makramCount = players.filter(p=>p.status==='makram').length;
+  const unpaid = players.filter(p=>!p.status);
 
-  players.forEach(p=>{
-    const paid = playerPaid(p);
-    (p.payments||[]).forEach(pay=>{
-      methodTotals[pay.method] = (methodTotals[pay.method]||0) + (parseFloat(pay.amount)||0);
-    });
-    received += paid;
-    if(paid > price) canteen += (paid - price);
-    if(paid < price) unpaid.push({name:p.name, remain:price-paid});
-  });
+  document.getElementById('totCash').textContent = (cashCount*price).toLocaleString();
+  document.getElementById('totInstapay').textContent = (instapayCount*price).toLocaleString();
+  document.getElementById('totVodafone').textContent = (vodafoneCount*price).toLocaleString();
+  document.getElementById('totZizo').textContent = (zizoCount*price).toLocaleString();
+  document.getElementById('totMakram').textContent = (makramCount*price).toLocaleString();
+  document.getElementById('totUnpaidCount').textContent = unpaid.length;
 
-  document.getElementById('totCash').textContent = methodTotals.cash.toLocaleString();
-  document.getElementById('totInstapay').textContent = methodTotals.instapay.toLocaleString();
-  document.getElementById('totVodafone').textContent = methodTotals.vodafone.toLocaleString();
-  document.getElementById('totZizo').textContent = methodTotals.zizo.toLocaleString();
-  document.getElementById('totMakram').textContent = methodTotals.makram.toLocaleString();
-  document.getElementById('totCanteen').textContent = canteen.toLocaleString();
-
-  const expected = players.length * price;
+  const received = (cashCount+instapayCount+vodafoneCount+zizoCount+makramCount)*price;
+  const expected = players.length*price;
   document.getElementById('totReceived').textContent = received.toLocaleString() + ' جنيه';
   document.getElementById('totExpectedLbl').textContent = `من ${expected.toLocaleString()} جنيه (${players.length} لاعب × ${price})`;
-
-  const canteenNote = document.getElementById('canteenNote');
-  canteenNote.textContent = canteen > 0 ? `منها ${canteen.toLocaleString()} جنيه فلوس كانتين (تتحسب مع مكرم)` : '';
 
   const unpaidList = document.getElementById('unpaidList');
   if(unpaid.length === 0){
     unpaidList.textContent = 'الكل حاسب 🎉';
   } else {
-    unpaidList.innerHTML = unpaid.map(p=>`${p.name} (ناقص ${p.remain.toLocaleString()})`).join(' • ');
+    unpaidList.innerHTML = unpaid.map(p=>p.name).join(' • ');
   }
 }
 
 document.getElementById('priceInput').addEventListener('input', ()=>{
-  renderPlayers();
   updateTotals();
   saveState();
 });
@@ -1059,15 +983,20 @@ function renderHistory(){
   }
   list.innerHTML = history.map(h=>{
     const price = parseFloat(h.price) || 0;
-    let received = 0, canteen = 0;
+    let received = 0;
     const methodTotals = {cash:0, instapay:0, vodafone:0, zizo:0, makram:0};
     (h.players||[]).forEach(p=>{
-      const paid = (p.payments||[]).reduce((s,x)=>s+(parseFloat(x.amount)||0),0);
-      received += paid;
-      if(paid>price) canteen += (paid-price);
-      (p.payments||[]).forEach(pay=>{
-        methodTotals[pay.method] = (methodTotals[pay.method]||0) + (parseFloat(pay.amount)||0);
-      });
+      if(p.payments && p.payments.length > 0){
+        // entries saved during the brief split-payment version
+        p.payments.forEach(pay=>{
+          const amt = parseFloat(pay.amount) || 0;
+          received += amt;
+          methodTotals[pay.method] = (methodTotals[pay.method]||0) + amt;
+        });
+      } else if(p.status){
+        received += price;
+        methodTotals[p.status] = (methodTotals[p.status]||0) + price;
+      }
     });
     const groupsHtml = (h.groups||[]).map(g=>{
       const standings = computeStandings(g);
@@ -1094,7 +1023,6 @@ function renderHistory(){
           <div class="hd-summary">
             <span>عدد اللاعبين: <b>${(h.players||[]).length}</b></span>
             <span>المستلم: <b>${received.toLocaleString()}</b> من ${(price*(h.players||[]).length).toLocaleString()}</span>
-            <span>كانتين: <b>${canteen.toLocaleString()}</b></span>
           </div>
           <div class="hd-summary">
             <span>كاش: <b>${methodTotals.cash.toLocaleString()}</b></span>
