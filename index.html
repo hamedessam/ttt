@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>حساب البطولة</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f4c4f">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --court:#0f4c4f;
+    --court-dark:#0a3436;
+    --line:#f4efe6;
+    --ball:#d7e858;
+    --cash:#3f8f5f;
+    --instapay:#4f7fd1;
+    --vodafone:#d1495f;
+    --zizo:#b5722e;
+    --makram:#6a4fa0;
+    --unpaid:#c9c2b4;
+    --unpaid-bg:#f6f3ec;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Cairo',sans-serif;
+    background:var(--line);
+    color:var(--court-dark);
+    min-height:100vh;
+    padding-bottom:60px;
+  }
+  header{
+    background:var(--court);
+    color:var(--line);
+    padding:22px 18px 26px;
+    position:relative;
+    overflow:hidden;
+  }
+  header::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    background:
+      linear-gradient(90deg, transparent 49%, rgba(244,239,230,0.15) 49%, rgba(244,239,230,0.15) 51%, transparent 51%);
+    pointer-events:none;
+  }
+  header h1{
+    margin:0;
+    font-size:22px;
+    font-weight:900;
+    position:relative;
+  }
+  header p{
+    margin:6px 0 0;
+    font-size:13px;
+    opacity:0.85;
+    position:relative;
+  }
+  .save-badge{
+    position:absolute;
+    left:16px;
+    top:20px;
+    font-size:11.5px;
+    background:rgba(244,239,230,0.15);
+    padding:5px 10px;
+    border-radius:20px;
+    color:var(--line);
+  }
+  .wrap{
+    max-width:640px;
+    margin:0 auto;
+    padding:16px;
+  }
+  .card{
+    background:#fff;
+    border-radius:14px;
+    padding:16px;
+    margin-bottom:14px;
+    box-shadow:0 1px 3px rgba(15,76,79,0.08);
+    border:1px solid #eae5d8;
+  }
+  .card h2{
+    font-size:15px;
+    margin:0 0 10px;
+    color:var(--court);
+    font-weight:700;
+  }
+  textarea{
+    width:100%;
+    min-height:120px;
+    border:1.5px solid #e0dacb;
+    border-radius:10px;
+    padding:10px 12px;
+    font-family:'Cairo',sans-serif;
+    font-size:14px;
+    resize:vertical;
+    direction:rtl;
+  }
+  textarea:focus{outline:2px solid var(--court); border-color:transparent;}
+  .row-inline{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    margin-top:10px;
+    flex-wrap:wrap;
+  }
+  .row-inline label{
+    font-size:13px;
+    color:#6b6455;
+  }
+  input[type=number]{
+    width:80px;
+    padding:7px 10px;
+    border:1.5px solid #e0dacb;
+    border-radius:8px;
+    font-family:'Cairo',sans-serif;
+    font-size:14px;
+    text-align:center;
+  }
+  button.primary{
+    background:var(--court);
+    color:var(--line);
+    border:none;
+    padding:9px 20px;
+    border-radius:9px;
+    font-family:'Cairo',sans-serif;
+    font-weight:700;
+    font-size:14px;
+    cursor:pointer;
+    transition:background .15s;
+  }
+  button.primary:hover{background:var(--court-dark);}
+  button.ghost{
+    background:transparent;
+    color:#a08f77;
+    border:1px solid #e0dacb;
+    padding:9px 16px;
+    border-radius:9px;
+    font-family:'Cairo',sans-serif;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .player-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:10px 12px;
+    border-radius:10px;
+    background:var(--unpaid-bg);
+    border:1.5px solid #eae5d8;
+    margin-bottom:8px;
+    transition:background .15s, border-color .15s;
+  }
+  .player-row.paid{
+    background:#eef7ee;
+    border-color:var(--cash);
+  }
+  .player-row .pname{
+    font-weight:700;
+    font-size:14.5px;
+    min-width:90px;
+  }
+  .methods{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .methods button{
+    border:1.5px solid #ddd6c6;
+    background:#fff;
+    color:#8a8168;
+    font-family:'Cairo',sans-serif;
+    font-size:12.5px;
+    font-weight:600;
+    padding:6px 10px;
+    border-radius:20px;
+    cursor:pointer;
+    transition:all .12s;
+  }
+  .methods button.sel-cash{background:var(--cash); border-color:var(--cash); color:#fff;}
+  .methods button.sel-instapay{background:var(--instapay); border-color:var(--instapay); color:#fff;}
+  .methods button.sel-vodafone{background:var(--vodafone); border-color:var(--vodafone); color:#fff;}
+  .methods button.sel-zizo{background:var(--zizo); border-color:var(--zizo); color:#fff;}
+  .methods button.sel-makram{background:var(--makram); border-color:var(--makram); color:#fff;}
+  .methods button:hover{border-color:var(--court);}
+  .empty-hint{
+    color:#a89e88;
+    font-size:13.5px;
+    text-align:center;
+    padding:20px 0;
+  }
+  .totals{
+    display:grid;
+    grid-template-columns:1fr 1fr 1fr;
+    gap:10px;
+  }
+  .tbox{
+    background:var(--unpaid-bg);
+    border-radius:10px;
+    padding:12px;
+    text-align:center;
+  }
+  .tbox .num{
+    font-size:20px;
+    font-weight:900;
+    color:var(--court);
+  }
+  .tbox .lbl{
+    font-size:12px;
+    color:#8a8168;
+    margin-top:2px;
+  }
+  .tbox.cash .num{color:var(--cash);}
+  .tbox.instapay .num{color:var(--instapay);}
+  .tbox.vodafone .num{color:var(--vodafone);}
+  .tbox.zizo .num{color:var(--zizo);}
+  .tbox.makram .num{color:var(--makram);}
+  .grand{
+    margin-top:12px;
+    background:var(--court);
+    color:var(--line);
+    border-radius:10px;
+    padding:14px;
+    text-align:center;
+  }
+  .grand .num{font-size:26px; font-weight:900; color:var(--ball);}
+  .grand .lbl{font-size:12.5px; opacity:.85; margin-top:2px;}
+  .unpaid-list{
+    font-size:13.5px;
+    color:var(--vodafone);
+    line-height:1.9;
+  }
+  .group-block{
+    border:1.5px solid #eae5d8;
+    border-radius:12px;
+    padding:12px;
+    margin-bottom:14px;
+  }
+  .group-block h3{
+    margin:0 0 10px;
+    font-size:14.5px;
+    color:var(--court);
+    font-weight:700;
+  }
+  .match-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 0;
+    border-bottom:1px solid #f1ede2;
+    flex-wrap:wrap;
+  }
+  .match-row:last-child{border-bottom:none;}
+  .team-btn{
+    background:var(--unpaid-bg);
+    border:1.5px solid #e0dacb;
+    border-radius:8px;
+    padding:6px 10px;
+    font-family:'Cairo',sans-serif;
+    font-size:13px;
+    font-weight:600;
+    color:var(--court-dark);
+    cursor:pointer;
+    flex:1;
+    min-width:70px;
+    text-align:center;
+  }
+  .team-btn.winner{
+    background:var(--cash);
+    border-color:var(--cash);
+    color:#fff;
+  }
+  .score-inputs{
+    display:flex;
+    align-items:center;
+    gap:4px;
+  }
+  .score-inputs input{
+    width:42px;
+    padding:5px 4px;
+    border:1.5px solid #e0dacb;
+    border-radius:6px;
+    font-family:'Cairo',sans-serif;
+    font-size:13px;
+    text-align:center;
+  }
+  .score-inputs span{color:#a89e88; font-size:12px;}
+  .standings-table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:8px;
+    font-size:13.5px;
+  }
+  .standings-table th{
+    text-align:right;
+    color:#8a8168;
+    font-size:11.5px;
+    font-weight:600;
+    padding:4px 6px;
+    border-bottom:1.5px solid #eae5d8;
+  }
+  .standings-table td{
+    padding:6px 6px;
+    border-bottom:1px solid #f1ede2;
+  }
+  .standings-table tr.rank1 td:first-child{color:var(--cash); font-weight:900;}
+  .standings-table tr.rank2 td:first-child{color:var(--instapay); font-weight:900;}
+  .tie-row{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    padding:4px 0;
+  }
+  .tie-row button{
+    background:none;
+    border:1px solid #e0dacb;
+    color:#a08f77;
+    font-size:11.5px;
+    padding:3px 8px;
+    border-radius:14px;
+    cursor:pointer;
+    font-family:'Cairo',sans-serif;
+  }
+  .reset-order{
+    text-align:center;
+    margin-top:6px;
+  }
+  .reset-order button{
+    background:none;
+    border:none;
+    color:#a89e88;
+    font-size:12px;
+    text-decoration:underline;
+    cursor:pointer;
+    font-family:'Cairo',sans-serif;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="save-badge" id="saveBadge">جاري التحميل...</div>
+  <h1>🎾 حساب البطولة</h1>
+  <p>الصق ليستة التيمات، وسجّل مين حاسب ومين لأ</p>
+</header>
+
+<div class="wrap">
+
+  <div class="card" id="pasteCard">
+    <h2>1. ليستة التيمات</h2>
+    <textarea id="teamsInput" placeholder="1- تيم حامد ودرباله
+2- تيم عبدالله ورضا
+3- تيم جعفر وعمر"></textarea>
+    <div class="row-inline">
+      <label>سعر الاشتراك للفرد</label>
+      <input type="number" id="priceInput" value="130">
+      <span style="font-size:13px;color:#8a8168;">جنيه</span>
+    </div>
+    <div class="row-inline">
+      <button class="primary" onclick="parseTeams()">استخرج اللاعبين</button>
+      <button class="ghost" onclick="resetAll()">مسح الكل</button>
+    </div>
+  </div>
+
+  <div class="card" id="playersCard" style="display:none;">
+    <h2>2. حالة الدفع</h2>
+    <div id="playersList"></div>
+  </div>
+
+  <div class="card" id="totalsCard" style="display:none;">
+    <h2>3. الإجمالي</h2>
+    <div class="totals">
+      <div class="tbox cash"><div class="num" id="totCash">0</div><div class="lbl">كاش</div></div>
+      <div class="tbox instapay"><div class="num" id="totInstapay">0</div><div class="lbl">انستاباي</div></div>
+      <div class="tbox vodafone"><div class="num" id="totVodafone">0</div><div class="lbl">فودافون كاش</div></div>
+      <div class="tbox zizo"><div class="num" id="totZizo">0</div><div class="lbl">مع زيزو</div></div>
+      <div class="tbox makram"><div class="num" id="totMakram">0</div><div class="lbl">مع مكرم</div></div>
+      <div class="tbox"><div class="num" id="totUnpaidCount">0</div><div class="lbl">لسه ما حاسبوش</div></div>
+    </div>
+    <div class="grand">
+      <div class="num" id="totReceived">0</div>
+      <div class="lbl" id="totExpectedLbl">من 0 جنيه</div>
+    </div>
+    <div style="margin-top:12px;" id="unpaidWrap">
+      <h2 style="font-size:13.5px;color:#a89e88;">مستنيين حساب من:</h2>
+      <div class="unpaid-list" id="unpaidList">الكل حاسب 🎉</div>
+    </div>
+  </div>
+
+  <div class="card" id="groupsCard">
+    <h2>4. المجموعات والمباريات</h2>
+    <textarea id="groupsInput" placeholder="مجموعة 1
+تيم حامد ودرباله
+تيم عبدالله ورضا
+تيم جعفر وعمر
+تيم كريم وسيف
+
+مجموعة 2
+تيم ..."></textarea>
+    <div class="row-inline">
+      <button class="primary" onclick="parseGroups()">استخرج المجموعات والماتشات</button>
+      <button class="ghost" onclick="resetGroups()">مسح المجموعات</button>
+    </div>
+    <div id="groupsOutput" style="margin-top:14px;"></div>
+  </div>
+
+</div>
+
+<script>
+let players = []; // {name, status: null|'cash'|'instapay'|'vodafone'|'zizo'|'makram'}
+let groups = []; // {name, teams:[...], matches:[{a,b,scoreA,scoreB,manualWinner}], override:null|[...]}
+const STORAGE_KEY = 'tournament-current';
+
+function setBadge(text){
+  document.getElementById('saveBadge').textContent = text;
+}
+
+function saveState(){
+  try{
+    const data = {
+      teamsInput: document.getElementById('teamsInput').value,
+      price: document.getElementById('priceInput').value,
+      players: players,
+      groupsInput: document.getElementById('groupsInput').value,
+      groups: groups
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    setBadge('اتحفظ ✓');
+  }catch(e){
+    console.error('Save error:', e);
+    setBadge('فشل الحفظ');
+  }
+}
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const data = JSON.parse(raw);
+      document.getElementById('teamsInput').value = data.teamsInput || '';
+      document.getElementById('priceInput').value = data.price || 130;
+      players = data.players || [];
+      document.getElementById('groupsInput').value = data.groupsInput || '';
+      groups = data.groups || [];
+      if(players.length > 0){
+        document.getElementById('playersCard').style.display = 'block';
+        document.getElementById('totalsCard').style.display = 'block';
+        renderPlayers();
+        updateTotals();
+      }
+      if(groups.length > 0){
+        renderGroups();
+      }
+      setBadge('اتحفظ ✓');
+    } else {
+      setBadge('بطولة جديدة');
+    }
+  }catch(e){
+    console.error('Load error:', e);
+    setBadge('بطولة جديدة');
+  }
+}
+
+window.addEventListener('DOMContentLoaded', loadState);
+
+function parseTeams(){
+  const raw = document.getElementById('teamsInput').value;
+  const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+  const newPlayers = [];
+
+  lines.forEach(line=>{
+    let clean = line
+      .replace(/^\s*\d+\s*[-.)،]?\s*/,'')  // remove leading number + dash/dot
+      .replace(/تيم\s*/,'')                 // remove word "تيم"
+      .trim();
+
+    if(!clean) return;
+
+    const idx = clean.indexOf(' و');
+    let p1, p2;
+    if(idx !== -1){
+      p1 = clean.slice(0, idx).trim();
+      p2 = clean.slice(idx+2).trim();
+    } else {
+      p1 = clean;
+      p2 = null;
+    }
+    if(p1) newPlayers.push({name:p1, status:null});
+    if(p2) newPlayers.push({name:p2, status:null});
+  });
+
+  if(newPlayers.length === 0){
+    alert('مش قادر أستخرج أسامي من الليستة، تأكد من الفورمات');
+    return;
+  }
+
+  players = newPlayers;
+  document.getElementById('playersCard').style.display = 'block';
+  document.getElementById('totalsCard').style.display = 'block';
+  renderPlayers();
+  updateTotals();
+  saveState();
+}
+
+function renderPlayers(){
+  const list = document.getElementById('playersList');
+  if(players.length === 0){
+    list.innerHTML = '<div class="empty-hint">مفيش لاعبين لسه</div>';
+    return;
+  }
+  list.innerHTML = players.map((p, i)=>{
+    const paidClass = p.status ? 'paid' : '';
+    return `
+      <div class="player-row ${paidClass}">
+        <div class="pname">${p.name}</div>
+        <div class="methods">
+          <button class="${p.status==='cash'?'sel-cash':''}" onclick="setStatus(${i},'cash')">كاش</button>
+          <button class="${p.status==='instapay'?'sel-instapay':''}" onclick="setStatus(${i},'instapay')">انستاباي</button>
+          <button class="${p.status==='vodafone'?'sel-vodafone':''}" onclick="setStatus(${i},'vodafone')">فودافون كاش</button>
+          <button class="${p.status==='zizo'?'sel-zizo':''}" onclick="setStatus(${i},'zizo')">مع زيزو</button>
+          <button class="${p.status==='makram'?'sel-makram':''}" onclick="setStatus(${i},'makram')">مع مكرم</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function setStatus(i, method){
+  players[i].status = (players[i].status === method) ? null : method;
+  renderPlayers();
+  updateTotals();
+  saveState();
+}
+
+function updateTotals(){
+  const price = parseFloat(document.getElementById('priceInput').value) || 0;
+  const cashCount = players.filter(p=>p.status==='cash').length;
+  const instapayCount = players.filter(p=>p.status==='instapay').length;
+  const vodafoneCount = players.filter(p=>p.status==='vodafone').length;
+  const zizoCount = players.filter(p=>p.status==='zizo').length;
+  const makramCount = players.filter(p=>p.status==='makram').length;
+  const unpaid = players.filter(p=>!p.status);
+
+  document.getElementById('totCash').textContent = (cashCount*price).toLocaleString();
+  document.getElementById('totInstapay').textContent = (instapayCount*price).toLocaleString();
+  document.getElementById('totVodafone').textContent = (vodafoneCount*price).toLocaleString();
+  document.getElementById('totZizo').textContent = (zizoCount*price).toLocaleString();
+  document.getElementById('totMakram').textContent = (makramCount*price).toLocaleString();
+  document.getElementById('totUnpaidCount').textContent = unpaid.length;
+
+  const received = (cashCount+instapayCount+vodafoneCount+zizoCount+makramCount)*price;
+  const expected = players.length*price;
+  document.getElementById('totReceived').textContent = received.toLocaleString() + ' جنيه';
+  document.getElementById('totExpectedLbl').textContent = `من ${expected.toLocaleString()} جنيه (${players.length} لاعب × ${price})`;
+
+  const unpaidList = document.getElementById('unpaidList');
+  if(unpaid.length === 0){
+    unpaidList.textContent = 'الكل حاسب 🎉';
+  } else {
+    unpaidList.innerHTML = unpaid.map(p=>p.name).join(' • ');
+  }
+}
+
+document.getElementById('priceInput').addEventListener('input', ()=>{
+  updateTotals();
+  saveState();
+});
+
+document.getElementById('teamsInput').addEventListener('input', saveState);
+
+function resetAll(){
+  if(!confirm('هيمسح كل البيانات، متأكد؟')) return;
+  players = [];
+  document.getElementById('teamsInput').value = '';
+  document.getElementById('playersCard').style.display = 'none';
+  document.getElementById('totalsCard').style.display = 'none';
+  saveState();
+}
+
+function parseGroups(){
+  const raw = document.getElementById('groupsInput').value;
+  const lines = raw.split('\n').map(l=>l.trim());
+  const newGroups = [];
+  let current = null;
+
+  lines.forEach(line=>{
+    if(!line){ return; }
+    let stripped = line.replace(/^\s*\d+\s*[-.)،]?\s*/,'').trim();
+    if(stripped.includes('تيم')){
+      let clean = stripped.replace(/تيم\s*/,'').trim();
+      const idx = clean.indexOf(' و');
+      let p1, p2;
+      if(idx !== -1){
+        p1 = clean.slice(0, idx).trim();
+        p2 = clean.slice(idx+2).trim();
+      } else {
+        p1 = clean; p2 = '';
+      }
+      const teamName = p2 ? `${p1} و${p2}` : p1;
+      if(!current){
+        current = {name: 'مجموعة 1', teams: []};
+        newGroups.push(current);
+      }
+      if(teamName) current.teams.push(teamName);
+    } else {
+      current = {name: line, teams: []};
+      newGroups.push(current);
+    }
+  });
+
+  newGroups.forEach(g=>{
+    g.matches = [];
+    for(let i=0;i<g.teams.length;i++){
+      for(let j=i+1;j<g.teams.length;j++){
+        g.matches.push({a:g.teams[i], b:g.teams[j], scoreA:'', scoreB:'', manualWinner:null});
+      }
+    }
+    g.override = null;
+  });
+
+  if(newGroups.length === 0 || newGroups.every(g=>g.teams.length===0)){
+    alert('مش قادر أستخرج مجموعات، تأكد من الفورمات');
+    return;
+  }
+
+  groups = newGroups;
+  renderGroups();
+  saveState();
+}
+
+function getMatchWinner(m){
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb){
+    return sa > sb ? m.a : m.b;
+  }
+  if(m.manualWinner) return m.manualWinner;
+  return null;
+}
+
+function computeStandings(g){
+  const stats = {};
+  g.teams.forEach(t=> stats[t] = {team:t, wins:0, diff:0});
+  g.matches.forEach(m=>{
+    const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+    const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+    const winner = getMatchWinner(m);
+    if(winner) stats[winner].wins++;
+    if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb)){
+      stats[m.a].diff += (sa-sb);
+      stats[m.b].diff += (sb-sa);
+    }
+  });
+
+  let arr = Object.values(stats);
+
+  if(g.override && g.override.length===arr.length && g.override.every(t=>stats[t])){
+    arr = g.override.map(name=>stats[name]);
+  } else {
+    arr.sort((x,y)=>{
+      if(y.wins !== x.wins) return y.wins - x.wins;
+      if(y.diff !== x.diff) return y.diff - x.diff;
+      const match = g.matches.find(m => (m.a===x.team && m.b===y.team) || (m.a===y.team && m.b===x.team));
+      if(match){
+        const w = getMatchWinner(match);
+        if(w === x.team) return -1;
+        if(w === y.team) return 1;
+      }
+      return 0;
+    });
+  }
+  return arr;
+}
+
+function isTiedUnresolved(g, x, y){
+  if(x.wins !== y.wins) return false;
+  if(x.diff !== y.diff) return false;
+  const match = g.matches.find(m => (m.a===x.team && m.b===y.team) || (m.a===y.team && m.b===x.team));
+  if(match){
+    const w = getMatchWinner(match);
+    if(w) return false;
+  }
+  return true;
+}
+
+function renderGroups(){
+  const out = document.getElementById('groupsOutput');
+  out.innerHTML = groups.map((g, gi)=>{
+    const matchesHtml = g.matches.map((m, mi)=>{
+      const winner = getMatchWinner(m);
+      return `
+        <div class="match-row">
+          <button class="team-btn ${winner===m.a?'winner':''}" onclick="setManualWinner(${gi},${mi},'a')">${m.a}</button>
+          <div class="score-inputs">
+            <input type="number" value="${m.scoreA}" placeholder="-" onchange="setScore(${gi},${mi},'a',this.value)">
+            <span>:</span>
+            <input type="number" value="${m.scoreB}" placeholder="-" onchange="setScore(${gi},${mi},'b',this.value)">
+          </div>
+          <button class="team-btn ${winner===m.b?'winner':''}" onclick="setManualWinner(${gi},${mi},'b')">${m.b}</button>
+        </div>
+      `;
+    }).join('');
+
+    const standings = computeStandings(g);
+    const rowsHtml = standings.map((s, si)=>{
+      let tieHtml = '';
+      if(si < standings.length-1 && isTiedUnresolved(g, s, standings[si+1])){
+        tieHtml = `<div class="tie-row">🟡 متعادلين <button onclick="swapStanding(${gi},${si})">بدّل الترتيب</button></div>`;
+      }
+      const rankClass = si===0 ? 'rank1' : (si===1 ? 'rank2' : '');
+      return `
+        <tr class="${rankClass}">
+          <td>${si+1}</td>
+          <td>${s.team}</td>
+          <td>${s.wins}</td>
+          <td>${s.diff>0?'+':''}${s.diff}</td>
+        </tr>
+        ${tieHtml ? `<tr><td colspan="4">${tieHtml}</td></tr>` : ''}
+      `;
+    }).join('');
+
+    return `
+      <div class="group-block">
+        <h3>${g.name}</h3>
+        ${matchesHtml}
+        <table class="standings-table">
+          <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق الأشواط</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        ${g.override ? `<div class="reset-order"><button onclick="resetOrder(${gi})">إعادة الترتيب التلقائي</button></div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function setScore(gi, mi, side, value){
+  const m = groups[gi].matches[mi];
+  if(side==='a') m.scoreA = value; else m.scoreB = value;
+  renderGroups();
+  saveState();
+}
+
+function setManualWinner(gi, mi, side){
+  const m = groups[gi].matches[mi];
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb){
+    return; // score already decides the winner, ignore manual tap
+  }
+  const team = side==='a' ? m.a : m.b;
+  m.manualWinner = (m.manualWinner === team) ? null : team;
+  renderGroups();
+  saveState();
+}
+
+function swapStanding(gi, i){
+  const g = groups[gi];
+  const standings = computeStandings(g);
+  const order = standings.map(s=>s.team);
+  const tmp = order[i]; order[i] = order[i+1]; order[i+1] = tmp;
+  g.override = order;
+  renderGroups();
+  saveState();
+}
+
+function resetOrder(gi){
+  groups[gi].override = null;
+  renderGroups();
+  saveState();
+}
+
+document.getElementById('groupsInput').addEventListener('input', saveState);
+
+function resetGroups(){
+  if(!confirm('هيمسح المجموعات والماتشات كلها، متأكد؟')) return;
+  groups = [];
+  document.getElementById('groupsInput').value = '';
+  document.getElementById('groupsOutput').innerHTML = '';
+  saveState();
+}
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(e=>console.error('SW error:', e));
+  });
+}
+</script>
+
+</body>
+</html>
