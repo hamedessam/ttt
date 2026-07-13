@@ -883,7 +883,19 @@ function setManualWinner(gi, mi, side){
     return;
   }
   const team = side==='a' ? m.a : m.b;
-  m.manualWinner = (m.manualWinner === team) ? null : team;
+  const wasSelected = (m.manualWinner === team);
+
+  if(wasSelected){
+    m.manualWinner = null;
+    // undo the auto-filled 6 if the opponent's score was never entered
+    if(side==='a' && m.scoreA==='6' && (m.scoreB===''||m.scoreB==null)) m.scoreA = '';
+    if(side==='b' && m.scoreB==='6' && (m.scoreA===''||m.scoreA==null)) m.scoreB = '';
+  } else {
+    m.manualWinner = team;
+    // fill in the winner's 6 automatically; stays editable, opponent's box stays blank
+    if(side==='a' && (m.scoreA===''||m.scoreA==null)) m.scoreA = '6';
+    if(side==='b' && (m.scoreB===''||m.scoreB==null)) m.scoreB = '6';
+  }
   renderGroups();
   saveState();
   renderDropTracker();
