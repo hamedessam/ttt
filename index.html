@@ -132,7 +132,7 @@
     background:#fff;
     color:var(--court-dark);
   }
-  button.primary{
+  button.primary, label.primary{
     background:var(--court);
     color:var(--line);
     border:none;
@@ -443,7 +443,12 @@
 
   <div class="card" id="groupsCard">
     <h2>4. المجموعات والمباريات</h2>
-    <textarea id="groupsInput" placeholder="مجموعة 1
+    <div class="row-inline" style="margin-top:0;">
+      <label for="groupImageInput" class="primary" style="display:inline-block; cursor:pointer;">📷 ارفع صور المجموعات</label>
+      <input type="file" id="groupImageInput" accept="image/*" multiple style="display:none;" onchange="handleGroupImages(this.files)">
+    </div>
+    <div id="ocrStatus" style="font-size:12px; color:#8a8168; margin-top:6px;"></div>
+    <textarea id="groupsInput" style="margin-top:10px;" placeholder="مجموعة 1
 تيم حامد ودرباله
 تيم عبدالله ورضا
 تيم جعفر وعمر
@@ -458,8 +463,26 @@
     <div id="groupsOutput" style="margin-top:14px;"></div>
   </div>
 
+  <div class="card" id="knockoutCard">
+    <h2>5. قرعة الدور الوسيط (الأول ضد التاني)</h2>
+    <div class="row-inline">
+      <button class="primary" onclick="generateKnockout()">🎲 اعمل القرعة</button>
+      <button class="ghost" onclick="clearKnockout()">مسح القرعة</button>
+    </div>
+    <div id="knockoutOutput" style="margin-top:14px;"></div>
+  </div>
+
+  <div class="card" id="semifinalCard">
+    <h2>6. الدور قبل النهائي والنهائي</h2>
+    <div class="row-inline">
+      <button class="primary" onclick="generateSemiFinal()">تحديد الصاعد مباشرة للنهائي</button>
+      <button class="ghost" onclick="clearSemiFinal()">مسح</button>
+    </div>
+    <div id="semifinalOutput" style="margin-top:14px;"></div>
+  </div>
+
   <div class="card" id="archiveCard">
-    <h2>5. أرشيف البطولات</h2>
+    <h2>7. أرشيف البطولات</h2>
     <div class="row-inline">
       <button class="primary" onclick="saveTournament()">💾 حفظ البطولة الحالية</button>
       <button class="ghost" onclick="startNewTournament()">بطولة جديدة</button>
@@ -467,9 +490,14 @@
     <div id="historyList" style="margin-top:14px;"></div>
   </div>
 
-  <div class="card" id="dropCard">
-    <h2>6. متابعة النزول من Low D لـ Beginners (الشهر الحالي)</h2>
-    <div id="dropList"></div>
+  <div class="card" id="trackersCard">
+    <h2>8. متابعة الحركة بين Low D وBeginners (الفترة الحالية)</h2>
+    <div id="trackersOutput"></div>
+    <div class="row-inline">
+      <button class="primary" onclick="copyReport()">📋 انسخ تقرير للواتساب</button>
+      <button class="ghost" onclick="startNewTrackingMonth()">إقفال الفترة وبدء فترة جديدة</button>
+    </div>
+    <div id="monthlyArchiveList" style="margin-top:14px;"></div>
   </div>
 
 </div>
@@ -478,6 +506,10 @@
 let currentType = null; // 'lowd' | 'beginners' | null
 let players = []; // {name, status: null|'cash'|'instapay'|'vodafone'|'zizo'|'makram'}
 let groups = []; // {name, teams:[...], matches:[{a,b,scoreA,scoreB,manualWinner}], override:null|[...]}
+let knockout = null; // {pairs:[{aGroup,aTeam,bGroup,bTeam,scoreA,scoreB,manualWinner}]}
+let semifinal = null; // {tiedPending:{tiedTeams,otherTeams}} | {byeTeam, decider:{a,b,scoreA,scoreB,manualWinner}, final:{a,b,scoreA,scoreB,manualWinner}}
+let trackers = {lowdNonAdvance:{}, beginnersMedals:{}, lowdMedals:{}};
+let monthlyArchive = []; // {id, label, date, trackers}
 let history = []; // saved tournaments
 const STORAGE_KEY = 'tournament-current-v2';
 const METHOD_LABELS = {cash:'كاش', instapay:'انستاباي', vodafone:'فودافون كاش', zizo:'مع زيزو', makram:'مع مكرم'};
@@ -495,6 +527,10 @@ function saveState(){
       players: players,
       groupsInput: document.getElementById('groupsInput').value,
       groups: groups,
+      knockout: knockout,
+      semifinal: semifinal,
+      trackers: trackers,
+      monthlyArchive: monthlyArchive,
       history: history
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -543,7 +579,19 @@ function loadState(){
       players = (data.players || []).map(p=>migratePlayer(p, price));
       document.getElementById('groupsInput').value = data.groupsInput || '';
       groups = data.groups || [];
+      knockout = data.knockout || null;
+      semifinal = data.semifinal || null;
       history = data.history || [];
+      monthlyArchive = data.monthlyArchive || [];
+
+      if(data.trackers){
+        trackers = data.trackers;
+      } else if(history.length > 0){
+        // first load after this update: backfill trackers from tournaments already in the archive
+        trackers = {lowdNonAdvance:{}, beginnersMedals:{}, lowdMedals:{}};
+        history.forEach(entry => updateTrackersForEntry(entry));
+      }
+
       updateTypeUI();
       if(players.length > 0){
         document.getElementById('playersCard').style.display = 'block';
@@ -554,13 +602,17 @@ function loadState(){
       if(groups.length > 0){
         renderGroups();
       }
+      renderKnockout();
+      renderSemiFinal();
       renderHistory();
-      renderDropTracker();
+      renderTrackers();
+      renderMonthlyArchive();
       setBadge('اتحفظ ✓');
     } else {
       setBadge('بطولة جديدة');
       renderHistory();
-      renderDropTracker();
+      renderTrackers();
+      renderMonthlyArchive();
     }
   }catch(e){
     console.error('Load error:', e);
@@ -710,6 +762,71 @@ function resetAll(){
 }
 
 /* ---------- Groups / matches ---------- */
+/* ---------- OCR: read group screenshots ---------- */
+function setOcrStatus(text){
+  document.getElementById('ocrStatus').textContent = text;
+}
+
+let tesseractLoadPromise = null;
+function ensureTesseractLoaded(){
+  if(window.Tesseract) return Promise.resolve();
+  if(tesseractLoadPromise) return tesseractLoadPromise;
+  tesseractLoadPromise = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = resolve;
+    s.onerror = ()=>reject(new Error('تعذر تحميل أداة القراءة - تأكد إنك متصل بالنت وجرب تاني'));
+    document.head.appendChild(s);
+  });
+  return tesseractLoadPromise;
+}
+
+function countExistingGroups(){
+  const text = document.getElementById('groupsInput').value;
+  const matches = text.match(/^\s*مجموعة/gm);
+  return matches ? matches.length : 0;
+}
+
+async function handleGroupImages(fileList){
+  if(!fileList || fileList.length === 0) return;
+  try{
+    setOcrStatus('جاري تحميل أداة القراءة...');
+    await ensureTesseractLoaded();
+
+    const newBlocks = [];
+    let groupCounter = countExistingGroups();
+
+    for(let i=0; i<fileList.length; i++){
+      setOcrStatus(`جاري قراءة الصورة ${i+1} من ${fileList.length}...`);
+      const result = await Tesseract.recognize(fileList[i], 'ara');
+      const text = result.data.text || '';
+      const teamLines = text.split('\n')
+        .map(l=>l.trim())
+        .filter(l=>l.includes('تيم'));
+
+      if(teamLines.length > 0){
+        groupCounter++;
+        newBlocks.push(`مجموعة ${groupCounter}`);
+        newBlocks.push(...teamLines);
+        newBlocks.push('');
+      }
+    }
+
+    if(newBlocks.length === 0){
+      setOcrStatus('❌ مقدرتش ألاقي أسامي تيمات في الصور دي - جرب صورة أوضح أو اكتب يدوي');
+      return;
+    }
+
+    const ta = document.getElementById('groupsInput');
+    ta.value = (ta.value.trim() ? ta.value.trim() + '\n\n' : '') + newBlocks.join('\n');
+    saveState();
+    setOcrStatus('✓ تمت القراءة - راجع الأسامي كويس قبل ما تدوس "استخرج المجموعات والماتشات" (ممكن يكون فيه أخطاء بسيطة في القراءة)');
+  }catch(e){
+    console.error('OCR error:', e);
+    setOcrStatus('❌ حصل خطأ: ' + e.message);
+  }
+}
+
 function parseGroups(){
   const raw = document.getElementById('groupsInput').value;
   const lines = raw.split('\n').map(l=>l.trim());
@@ -872,7 +989,6 @@ function setScore(gi, mi, side, value){
   if(side==='a') m.scoreA = value; else m.scoreB = value;
   renderGroups();
   saveState();
-  renderDropTracker();
 }
 
 function setManualWinner(gi, mi, side){
@@ -898,7 +1014,6 @@ function setManualWinner(gi, mi, side){
   }
   renderGroups();
   saveState();
-  renderDropTracker();
 }
 
 function swapStanding(gi, i){
@@ -909,14 +1024,12 @@ function swapStanding(gi, i){
   g.override = order;
   renderGroups();
   saveState();
-  renderDropTracker();
 }
 
 function resetOrder(gi){
   groups[gi].override = null;
   renderGroups();
   saveState();
-  renderDropTracker();
 }
 
 document.getElementById('groupsInput').addEventListener('input', saveState);
@@ -924,9 +1037,137 @@ document.getElementById('groupsInput').addEventListener('input', saveState);
 function resetGroups(){
   if(!confirm('هيمسح المجموعات والماتشات كلها، متأكد؟')) return;
   groups = [];
+  knockout = null;
+  semifinal = null;
   document.getElementById('groupsInput').value = '';
   document.getElementById('groupsOutput').innerHTML = '';
+  document.getElementById('semifinalOutput').innerHTML = '';
+  renderKnockout();
   saveState();
+}
+
+/* ---------- Knockout draw (1st vs 2nd across groups) ---------- */
+function shuffleArray(arr){
+  const a = [...arr];
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+function knockoutPairWinner(m){
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb){
+    return sa > sb ? m.aTeam : m.bTeam;
+  }
+  if(m.manualWinner) return m.manualWinner;
+  return null;
+}
+
+function knockoutPairMargin(m){
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb)){
+    return Math.abs(sa-sb);
+  }
+  return null;
+}
+
+function generateKnockout(){
+  const quals = groups.map((g,gi)=>{
+    const st = computeStandings(g);
+    return {gi, name:g.name, first: st[0] ? st[0].team : null, second: st[1] ? st[1].team : null};
+  }).filter(q=>q.first && q.second);
+
+  if(quals.length < 2){
+    alert('محتاج مجموعتين على الأقل عندهم مركز أول وتاني قبل ما تعمل القرعة');
+    return;
+  }
+
+  const n = quals.length;
+  let perm, tries = 0;
+  do{
+    perm = shuffleArray([...Array(n).keys()]);
+    tries++;
+  } while(perm.some((p,i)=>p===i) && tries<300);
+
+  const pairs = quals.map((q,i)=>({
+    aGroup: q.name, aTeam: q.first,
+    bGroup: quals[perm[i]].name, bTeam: quals[perm[i]].second,
+    scoreA:'', scoreB:'', manualWinner:null
+  }));
+
+  knockout = {pairs};
+  renderKnockout();
+  saveState();
+}
+
+function clearKnockout(){
+  if(!confirm('هيمسح القرعة الحالية، متأكد؟')) return;
+  knockout = null;
+  semifinal = null;
+  renderKnockout();
+  document.getElementById('semifinalOutput').innerHTML = '';
+  saveState();
+}
+
+function setKnockoutScore(i, side, value){
+  if(!knockout) return;
+  const m = knockout.pairs[i];
+  if(side==='a') m.scoreA = value; else m.scoreB = value;
+  renderKnockout();
+  saveState();
+}
+
+function setKnockoutWinner(i, side){
+  if(!knockout) return;
+  const m = knockout.pairs[i];
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb){
+    return;
+  }
+  const team = side==='a' ? m.aTeam : m.bTeam;
+  const wasSelected = (m.manualWinner === team);
+
+  if(wasSelected){
+    m.manualWinner = null;
+    if(side==='a' && m.scoreA==='6' && (m.scoreB===''||m.scoreB==null)) m.scoreA = '';
+    if(side==='b' && m.scoreB==='6' && (m.scoreA===''||m.scoreA==null)) m.scoreB = '';
+  } else {
+    m.manualWinner = team;
+    if(side==='a' && (m.scoreA===''||m.scoreA==null)) m.scoreA = '6';
+    if(side==='b' && (m.scoreB===''||m.scoreB==null)) m.scoreB = '6';
+  }
+  renderKnockout();
+  saveState();
+}
+
+function renderKnockout(){
+  const out = document.getElementById('knockoutOutput');
+  if(!knockout || !knockout.pairs || knockout.pairs.length===0){
+    out.innerHTML = '<div class="empty-hint">لسه مفيش قرعة - دوس "اعمل القرعة" بعد ما تدخل نتايج المجموعات</div>';
+    return;
+  }
+  out.innerHTML = knockout.pairs.map((m,i)=>{
+    const winner = knockoutPairWinner(m);
+    return `
+      <div class="match-row" style="flex-direction:column; align-items:stretch;">
+        <div style="font-size:11px;color:#a89e88;margin-bottom:4px;">🥇 ${m.aGroup} &nbsp;vs&nbsp; 🥈 ${m.bGroup}</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="team-btn ${winner===m.aTeam?'winner':''}" onclick="setKnockoutWinner(${i},'a')">${m.aTeam}</button>
+          <div class="score-inputs">
+            <input type="number" value="${m.scoreA}" placeholder="-" onchange="setKnockoutScore(${i},'a',this.value)">
+            <span>:</span>
+            <input type="number" value="${m.scoreB}" placeholder="-" onchange="setKnockoutScore(${i},'b',this.value)">
+          </div>
+          <button class="team-btn ${winner===m.bTeam?'winner':''}" onclick="setKnockoutWinner(${i},'b')">${m.bTeam}</button>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 /* ---------- Archive ---------- */
@@ -950,12 +1191,15 @@ function saveTournament(){
     price: document.getElementById('priceInput').value,
     players: JSON.parse(JSON.stringify(players)),
     groupsInput: document.getElementById('groupsInput').value,
-    groups: JSON.parse(JSON.stringify(groups))
+    groups: JSON.parse(JSON.stringify(groups)),
+    knockout: knockout ? JSON.parse(JSON.stringify(knockout)) : null,
+    semifinal: semifinal ? JSON.parse(JSON.stringify(semifinal)) : null
   };
   history.unshift(entry);
+  updateTrackersForEntry(entry);
   saveState();
   renderHistory();
-  renderDropTracker();
+  renderTrackers();
   alert('اتحفظت البطولة في الأرشيف ✓ تقدر تبدأ بطولة جديدة دلوقت لو حابب');
 }
 
@@ -963,12 +1207,16 @@ function startNewTournament(){
   if(!confirm('هيمسح شاشة العمل الحالية (البطولات المحفوظة هتفضل زي ماهي في الأرشيف)، متأكد؟')) return;
   players = [];
   groups = [];
+  knockout = null;
+  semifinal = null;
   currentType = null;
   document.getElementById('teamsInput').value = '';
   document.getElementById('groupsInput').value = '';
   document.getElementById('playersCard').style.display = 'none';
   document.getElementById('totalsCard').style.display = 'none';
   document.getElementById('groupsOutput').innerHTML = '';
+  document.getElementById('knockoutOutput').innerHTML = '';
+  document.getElementById('semifinalOutput').innerHTML = '';
   updateTypeUI();
   saveState();
 }
@@ -978,7 +1226,6 @@ function deleteHistoryEntry(id){
   history = history.filter(h=>h.id!==id);
   saveState();
   renderHistory();
-  renderDropTracker();
 }
 
 function toggleHistoryDetail(id){
@@ -1020,6 +1267,36 @@ function renderHistory(){
         </table>`;
     }).join('');
 
+    const knockoutHtml = (h.knockout && h.knockout.pairs && h.knockout.pairs.length) ? `
+      <h3 style="font-size:13px;margin:10px 0 4px;">قرعة الدور الوسيط</h3>
+      ${h.knockout.pairs.map(m=>{
+        const sa=(m.scoreA===''||m.scoreA==null)?null:parseFloat(m.scoreA);
+        const sb=(m.scoreB===''||m.scoreB==null)?null:parseFloat(m.scoreB);
+        let w=null;
+        if(sa!=null&&sb!=null&&!isNaN(sa)&&!isNaN(sb)&&sa!==sb) w = sa>sb?m.aTeam:m.bTeam;
+        else if(m.manualWinner) w=m.manualWinner;
+        return `<div style="font-size:12.5px;padding:4px 0;">${m.aTeam} <b>${m.scoreA||'?'}</b> - <b>${m.scoreB||'?'}</b> ${m.bTeam} ${w?`(فاز: ${w})`:''}</div>`;
+      }).join('')}
+    ` : '';
+
+    let championHtml = '';
+    if(h.semifinal && h.semifinal.final){
+      const fm = h.semifinal.final;
+      const champion = knockoutPairWinner({aTeam:fm.a, bTeam:fm.b, scoreA:fm.scoreA, scoreB:fm.scoreB, manualWinner:fm.manualWinner});
+      if(champion){
+        const runnerUp = champion===fm.a ? fm.b : fm.a;
+        const dm = h.semifinal.decider;
+        const deciderWinner = dm ? knockoutPairWinner({aTeam:dm.a, bTeam:dm.b, scoreA:dm.scoreA, scoreB:dm.scoreB, manualWinner:dm.manualWinner}) : null;
+        const third = deciderWinner ? (dm.a===deciderWinner ? dm.b : dm.a) : null;
+        championHtml = `
+          <h3 style="font-size:13px;margin:10px 0 4px;">النتيجة النهائية</h3>
+          <div style="font-size:12.5px;">🥇 بطل: <b>${champion}</b></div>
+          <div style="font-size:12.5px;">🥈 وصيف: <b>${runnerUp}</b></div>
+          ${third ? `<div style="font-size:12.5px;">🥉 تالت: <b>${third}</b></div>` : ''}
+        `;
+      }
+    }
+
     return `
       <div class="history-item">
         <div class="history-head" onclick="toggleHistoryDetail('${h.id}')">
@@ -1044,6 +1321,8 @@ function renderHistory(){
             <span>مكرم: <b>${methodTotals.makram.toLocaleString()}</b></span>
           </div>
           ${groupsHtml || '<div class="empty-hint">مفيش مجموعات محفوظة في البطولة دي</div>'}
+          ${knockoutHtml}
+          ${championHtml}
         </div>
       </div>
     `;
@@ -1051,46 +1330,349 @@ function renderHistory(){
 }
 
 /* ---------- Low D drop tracker ---------- */
-function computeDropCandidates(){
-  const now = new Date();
-  const curMonth = now.getFullYear() + '-' + now.getMonth();
-  const tally = {};
-  history.forEach(entry=>{
-    if(entry.type !== 'lowd') return;
-    const d = new Date(entry.date);
-    const entryMonth = d.getFullYear() + '-' + d.getMonth();
-    if(entryMonth !== curMonth) return;
-    (entry.groups||[]).forEach(g=>{
-      const standings = computeStandings(g);
-      const bottom = standings.slice(-2);
-      bottom.forEach(s=>{
-        const names = s.team.split(' و').map(n=>n.trim()).filter(Boolean);
-        names.forEach(n=>{ tally[n] = (tally[n]||0) + 1; });
-      });
-    });
-  });
-  return tally;
-}
-
-function renderDropTracker(){
-  const el = document.getElementById('dropList');
-  const tally = computeDropCandidates();
-  const names = Object.keys(tally);
-  if(names.length === 0){
-    el.innerHTML = '<div class="empty-hint">مفيش بيانات لسه للشهر الحالي - هتظهر هنا أول ما تحفظ بطولات Low D</div>';
+/* ---------- Semi-final (decider) + Final ---------- */
+function generateSemiFinal(){
+  if(!knockout || !knockout.pairs || knockout.pairs.length !== 3){
+    alert('محتاج قرعة الدور الوسيط تكون فيها 3 ماتشات بالظبط الأول');
     return;
   }
+  const results = knockout.pairs.map(m=>({
+    team: knockoutPairWinner(m),
+    margin: knockoutPairMargin(m)
+  }));
+  if(results.some(r=>!r.team || r.margin==null)){
+    alert('محتاج نتيجة كل الـ3 ماتشات تبقى مسجلة بالأشواط بالكامل (مش بس مين كسب) عشان نعرف نحدد الفارق');
+    return;
+  }
+  const maxMargin = Math.max(...results.map(r=>r.margin));
+  const topTeams = results.filter(r=>r.margin===maxMargin);
+
+  if(topTeams.length === 1){
+    const byeTeam = topTeams[0].team;
+    const deciderTeams = results.filter(r=>r.team!==byeTeam).map(r=>r.team);
+    semifinal = {
+      byeTeam,
+      decider: {a:deciderTeams[0], b:deciderTeams[1], scoreA:'', scoreB:'', manualWinner:null},
+      final: null
+    };
+  } else {
+    semifinal = {
+      tiedPending: {
+        tiedTeams: topTeams.map(r=>r.team),
+        otherTeams: results.filter(r=>r.margin!==maxMargin).map(r=>r.team)
+      }
+    };
+  }
+  renderSemiFinal();
+  saveState();
+}
+
+function doCoinFlip(){
+  if(!semifinal || !semifinal.tiedPending) return;
+  const tied = semifinal.tiedPending.tiedTeams;
+  const byeIndex = Math.floor(Math.random()*tied.length);
+  const byeTeam = tied[byeIndex];
+  const remaining = tied.filter((t,i)=>i!==byeIndex).concat(semifinal.tiedPending.otherTeams);
+  semifinal = {
+    byeTeam,
+    decider: {a:remaining[0], b:remaining[1], scoreA:'', scoreB:'', manualWinner:null},
+    final: null
+  };
+  renderSemiFinal();
+  saveState();
+}
+
+function clearSemiFinal(){
+  if(!confirm('هيمسح الدور اللي قبل النهائي والنهائي، متأكد؟')) return;
+  semifinal = null;
+  renderSemiFinal();
+  saveState();
+}
+
+function setDeciderScore(side, value){
+  if(!semifinal || !semifinal.decider) return;
+  if(side==='a') semifinal.decider.scoreA = value; else semifinal.decider.scoreB = value;
+  renderSemiFinal();
+  saveState();
+}
+
+function setDeciderWinner(side){
+  if(!semifinal || !semifinal.decider) return;
+  const m = semifinal.decider;
+  const w = getMatchWinner(m);
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb) return;
+  const team = side==='a' ? m.a : m.b;
+  const wasSelected = (m.manualWinner === team);
+  if(wasSelected){
+    m.manualWinner = null;
+    if(side==='a' && m.scoreA==='6' && (m.scoreB===''||m.scoreB==null)) m.scoreA='';
+    if(side==='b' && m.scoreB==='6' && (m.scoreA===''||m.scoreA==null)) m.scoreB='';
+  } else {
+    m.manualWinner = team;
+    if(side==='a' && (m.scoreA===''||m.scoreA==null)) m.scoreA='6';
+    if(side==='b' && (m.scoreB===''||m.scoreB==null)) m.scoreB='6';
+  }
+  renderSemiFinal();
+  saveState();
+}
+
+function setFinalScore(side, value){
+  if(!semifinal || !semifinal.final) return;
+  if(side==='a') semifinal.final.scoreA = value; else semifinal.final.scoreB = value;
+  renderSemiFinal();
+  saveState();
+}
+
+function setFinalWinner(side){
+  if(!semifinal || !semifinal.final) return;
+  const m = semifinal.final;
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb) return;
+  const team = side==='a' ? m.a : m.b;
+  const wasSelected = (m.manualWinner === team);
+  if(wasSelected){
+    m.manualWinner = null;
+    if(side==='a' && m.scoreA==='6' && (m.scoreB===''||m.scoreB==null)) m.scoreA='';
+    if(side==='b' && m.scoreB==='6' && (m.scoreA===''||m.scoreA==null)) m.scoreB='';
+  } else {
+    m.manualWinner = team;
+    if(side==='a' && (m.scoreA===''||m.scoreA==null)) m.scoreA='6';
+    if(side==='b' && (m.scoreB===''||m.scoreB==null)) m.scoreB='6';
+  }
+  renderSemiFinal();
+  saveState();
+}
+
+function renderMatchRowGeneric(m, onWinnerA, onWinnerB, onScoreA, onScoreB){
+  const winner = getMatchWinner(m);
+  return `
+    <div class="match-row">
+      <button class="team-btn ${winner===m.a?'winner':''}" onclick="${onWinnerA}">${m.a}</button>
+      <div class="score-inputs">
+        <input type="number" value="${m.scoreA}" placeholder="-" onchange="${onScoreA}">
+        <span>:</span>
+        <input type="number" value="${m.scoreB}" placeholder="-" onchange="${onScoreB}">
+      </div>
+      <button class="team-btn ${winner===m.b?'winner':''}" onclick="${onWinnerB}">${m.b}</button>
+    </div>
+  `;
+}
+
+function renderSemiFinal(){
+  const out = document.getElementById('semifinalOutput');
+  if(!semifinal){
+    out.innerHTML = '<div class="empty-hint">لسه مفيش - دوس "تحديد الصاعد مباشرة للنهائي" بعد ما تخلص نتايج قرعة الدور الوسيط بالأشواط كاملة</div>';
+    return;
+  }
+
+  if(semifinal.tiedPending){
+    const tied = semifinal.tiedPending.tiedTeams;
+    out.innerHTML = `
+      <div class="tie-row" style="justify-content:flex-start;">
+        🟡 تعادل في الفارق بين: <b>${tied.join(' و ')}</b>
+      </div>
+      <div class="row-inline">
+        <button class="primary" onclick="doCoinFlip()">🪙 قرعة ملك وكتابة</button>
+      </div>
+    `;
+    return;
+  }
+
+  // auto-build the final once the decider has a winner
+  const deciderWinner = getMatchWinner(semifinal.decider);
+  if(deciderWinner && !semifinal.final){
+    semifinal.final = {a:semifinal.byeTeam, b:deciderWinner, scoreA:'', scoreB:'', manualWinner:null};
+  }
+  // if decider result changes after the final was created, keep them in sync
+  if(semifinal.final && deciderWinner && semifinal.final.b !== deciderWinner && semifinal.final.a !== deciderWinner){
+    semifinal.final = {a:semifinal.byeTeam, b:deciderWinner, scoreA:'', scoreB:'', manualWinner:null};
+  }
+
+  let html = `<div style="font-size:12.5px;color:#8a8168;margin-bottom:6px;">صاعد مباشر للنهائي: <b>${semifinal.byeTeam}</b></div>`;
+  html += `<div style="font-size:11px;color:#a89e88;margin-bottom:4px;">ماتش تحديد المتأهل التاني للنهائي:</div>`;
+  html += renderMatchRowGeneric(semifinal.decider,
+    `setDeciderWinner('a')`, `setDeciderWinner('b')`,
+    `setDeciderScore('a',this.value)`, `setDeciderScore('b',this.value)`);
+
+  if(semifinal.final){
+    html += `<div style="font-size:11px;color:#a89e88;margin:10px 0 4px;">🏆 النهائي:</div>`;
+    html += renderMatchRowGeneric(semifinal.final,
+      `setFinalWinner('a')`, `setFinalWinner('b')`,
+      `setFinalScore('a',this.value)`, `setFinalScore('b',this.value)`);
+
+    const champion = getMatchWinner(semifinal.final);
+    if(champion){
+      const runnerUp = champion===semifinal.final.a ? semifinal.final.b : semifinal.final.a;
+      const third = deciderWinner===semifinal.final.a || deciderWinner===semifinal.final.b
+        ? (semifinal.decider.a===deciderWinner ? semifinal.decider.b : semifinal.decider.a)
+        : null;
+      html += `
+        <div class="grand" style="margin-top:10px;">
+          <div class="lbl">🥇 بطل البطولة</div>
+          <div class="num" style="font-size:18px;">${champion}</div>
+          <div class="lbl" style="margin-top:6px;">🥈 وصيف: ${runnerUp}</div>
+          ${third ? `<div class="lbl">🥉 مركز تالت: ${third}</div>` : ''}
+        </div>
+      `;
+    }
+  }
+
+  out.innerHTML = html;
+}
+
+/* ---------- Movement trackers (Low D <-> Beginners) ---------- */
+function medalTeamsFromKnockout(entry){
+  if(!entry.knockout || !entry.knockout.pairs) return [];
+  return entry.knockout.pairs.map(m=>knockoutPairWinner(m)).filter(Boolean);
+}
+
+function updateTrackersForEntry(entry){
+  if(entry.type === 'lowd'){
+    (entry.groups||[]).forEach(g=>{
+      const standings = computeStandings(g);
+      standings.slice(-2).forEach(s=>{
+        s.team.split(' و').map(n=>n.trim()).filter(Boolean).forEach(n=>{
+          trackers.lowdNonAdvance[n] = (trackers.lowdNonAdvance[n]||0) + 1;
+        });
+      });
+    });
+    medalTeamsFromKnockout(entry).forEach(team=>{
+      team.split(' و').map(n=>n.trim()).filter(Boolean).forEach(n=>{
+        trackers.lowdMedals[n] = (trackers.lowdMedals[n]||0) + 1;
+      });
+    });
+  } else if(entry.type === 'beginners'){
+    medalTeamsFromKnockout(entry).forEach(team=>{
+      team.split(' و').map(n=>n.trim()).filter(Boolean).forEach(n=>{
+        trackers.beginnersMedals[n] = (trackers.beginnersMedals[n]||0) + 1;
+      });
+    });
+  }
+}
+
+function renderTrackerList(tally, dangerThreshold, dangerLabel){
+  const names = Object.keys(tally);
+  if(names.length === 0){
+    return '<div class="empty-hint">مفيش بيانات لسه</div>';
+  }
   names.sort((a,b)=> tally[b]-tally[a]);
-  el.innerHTML = names.map(n=>{
+  return names.map(n=>{
     const count = tally[n];
-    const danger = count >= 2;
+    const danger = count >= dangerThreshold;
     return `
       <div class="drop-item ${danger?'danger':''}">
         <span>${danger?'🔴':'🟡'} ${n}</span>
-        <span class="drop-count">${count} مرة ${danger?'- ينزل Beginners':''}</span>
+        <span class="drop-count">${count} مرة ${danger?'- '+dangerLabel:''}</span>
       </div>
     `;
   }).join('');
+}
+
+function renderTrackers(){
+  const el = document.getElementById('trackersOutput');
+  el.innerHTML = `
+    <h3 style="font-size:13px;margin:6px 0 4px;color:var(--vodafone);">⬇️ نازلين من Low D لـ Beginners</h3>
+    ${renderTrackerList(trackers.lowdNonAdvance, 2, 'ينزل Beginners')}
+    <h3 style="font-size:13px;margin:14px 0 4px;color:var(--instapay);">⬆️ صاعدين من Beginners لـ Low D</h3>
+    ${renderTrackerList(trackers.beginnersMedals, 2, 'يصعد Low D')}
+    <h3 style="font-size:13px;margin:14px 0 4px;color:var(--makram);">🔒 ممنوعين يسجلوا Beginners</h3>
+    ${renderTrackerList(trackers.lowdMedals, 2, 'ممنوع Beginners')}
+  `;
+}
+
+function generateReportText(){
+  const down = Object.keys(trackers.lowdNonAdvance).filter(n=>trackers.lowdNonAdvance[n]>=2);
+  const up = Object.keys(trackers.beginnersMedals).filter(n=>trackers.beginnersMedals[n]>=2);
+  const blocked = Object.keys(trackers.lowdMedals).filter(n=>trackers.lowdMedals[n]>=2);
+  const lines = [];
+  lines.push('📋 تقرير الحركة');
+  lines.push('');
+  lines.push('⬇️ بينزلوا من Low D لـ Beginners:');
+  lines.push(down.length ? down.map(n=>'- '+n).join('\n') : 'محدش');
+  lines.push('');
+  lines.push('⬆️ بيصعدوا من Beginners لـ Low D:');
+  lines.push(up.length ? up.map(n=>'- '+n).join('\n') : 'محدش');
+  lines.push('');
+  lines.push('🔒 ممنوعين يسجلوا Beginners (لازم يفضلوا Low D):');
+  lines.push(blocked.length ? blocked.map(n=>'- '+n).join('\n') : 'محدش');
+  return lines.join('\n');
+}
+
+function copyReport(){
+  const text = generateReportText();
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>{
+      alert('اتنسخ التقرير ✓ الصقه في الجروب');
+    }).catch(()=>{
+      prompt('انسخ النص ده يدوي:', text);
+    });
+  } else {
+    prompt('انسخ النص ده يدوي:', text);
+  }
+}
+
+function startNewTrackingMonth(){
+  const hasData = Object.keys(trackers.lowdNonAdvance).length || Object.keys(trackers.beginnersMedals).length || Object.keys(trackers.lowdMedals).length;
+  if(!hasData){
+    alert('مفيش بيانات لسه في الفترة الحالية عشان تتحفظ');
+    return;
+  }
+  const defaultLabel = new Date().toLocaleDateString('ar-EG');
+  const label = prompt('اسم الفترة اللي بتتقفل (مثلاً: يونيو 2026)', defaultLabel) || defaultLabel;
+  monthlyArchive.unshift({
+    id: Date.now().toString(),
+    label,
+    date: new Date().toISOString(),
+    trackers: JSON.parse(JSON.stringify(trackers))
+  });
+  trackers = {lowdNonAdvance:{}, beginnersMedals:{}, lowdMedals:{}};
+  renderTrackers();
+  renderMonthlyArchive();
+  saveState();
+  alert('اتقفلت الفترة واتحفظت في الأرشيف ✓ وابتدت فترة جديدة');
+}
+
+function toggleMonthlyDetail(id){
+  const el = document.getElementById('ma-'+id);
+  if(!el) return;
+  el.classList.toggle('open');
+}
+
+function deleteMonthlyEntry(id){
+  if(!confirm('هيتمسح نهائي، متأكد؟')) return;
+  monthlyArchive = monthlyArchive.filter(m=>m.id!==id);
+  renderMonthlyArchive();
+  saveState();
+}
+
+function renderMonthlyArchive(){
+  const el = document.getElementById('monthlyArchiveList');
+  if(monthlyArchive.length === 0){
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = '<h3 style="font-size:13px;margin:6px 0 8px;color:#8a8168;">أرشيف الفترات السابقة</h3>' +
+    monthlyArchive.map(m=>`
+      <div class="history-item">
+        <div class="history-head" onclick="toggleMonthlyDetail('${m.id}')">
+          <span class="history-title">${m.label}</span>
+          <div class="history-actions">
+            <button onclick="event.stopPropagation(); deleteMonthlyEntry('${m.id}')">حذف</button>
+          </div>
+        </div>
+        <div class="history-detail" id="ma-${m.id}">
+          <h3 style="font-size:12.5px;margin:6px 0 4px;color:var(--vodafone);">نازلين Beginners</h3>
+          ${renderTrackerList(m.trackers.lowdNonAdvance, 2, 'نزل Beginners')}
+          <h3 style="font-size:12.5px;margin:10px 0 4px;color:var(--instapay);">صاعدين Low D</h3>
+          ${renderTrackerList(m.trackers.beginnersMedals, 2, 'صعد Low D')}
+          <h3 style="font-size:12.5px;margin:10px 0 4px;color:var(--makram);">ممنوعين Beginners</h3>
+          ${renderTrackerList(m.trackers.lowdMedals, 2, 'ممنوع Beginners')}
+        </div>
+      </div>
+    `).join('');
 }
 
 if('serviceWorker' in navigator){
