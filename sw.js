@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hesab-tournament-v7';
+const CACHE_NAME = 'hesab-tournament-v9';
 const FILES_TO_CACHE = [
   './index.html',
   './manifest.json',
