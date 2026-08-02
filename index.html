@@ -487,6 +487,12 @@
       <button class="primary" onclick="saveTournament()">💾 حفظ البطولة الحالية</button>
       <button class="ghost" onclick="startNewTournament()">بطولة جديدة</button>
     </div>
+    <div class="row-inline">
+      <button class="ghost" onclick="exportBackup()">⬇️ تصدير نسخة احتياطية</button>
+      <label for="importBackupInput" class="ghost" style="display:inline-block; cursor:pointer;">⬆️ استرجاع نسخة احتياطية</label>
+      <input type="file" id="importBackupInput" accept="application/json" style="display:none;" onchange="importBackup(this.files[0])">
+    </div>
+    <div style="font-size:11.5px;color:#a89e88;margin-top:6px;">صدّر نسخة احتياطية بعد كل بطولة أو كل شوية وسيبها في جوجل درايف أو ابعتها لنفسك على الواتساب - عشان لو حصل أي مسح للموقع بالغلط تقدر ترجع بيها.</div>
     <div id="historyList" style="margin-top:14px;"></div>
   </div>
 
@@ -1327,6 +1333,40 @@ function startNewTournament(){
   document.getElementById('semifinalOutput').innerHTML = '';
   updateTypeUI();
   saveState();
+}
+
+function exportBackup(){
+  const data = localStorage.getItem(STORAGE_KEY);
+  if(!data){
+    alert('مفيش بيانات لسه لعمل نسخة احتياطية منها');
+    return;
+  }
+  const blob = new Blob([data], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `hesab-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(file){
+  if(!file) return;
+  if(!confirm('استرجاع النسخة الاحتياطية هيستبدل كل البيانات الحالية على الموقع، متأكد؟')) return;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const parsed = JSON.parse(e.target.result);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      alert('اترجعت النسخة الاحتياطية ✓ هتتحدث الصفحة دلوقت');
+      location.reload();
+    }catch(err){
+      alert('الملف ده مش نسخة احتياطية صحيحة، جرب ملف تاني');
+    }
+  };
+  reader.readAsText(file);
 }
 
 function deleteHistoryEntry(id){
