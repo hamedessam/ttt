@@ -182,6 +182,7 @@
   }
   .type-btn.active-lowd{background:var(--vodafone); border-color:var(--vodafone); color:#fff;}
   .type-btn.active-beginners{background:var(--instapay); border-color:var(--instapay); color:#fff;}
+  .type-btn.active-sunday{background:var(--zizo); border-color:var(--zizo); color:#fff;}
   .type-note{
     font-size:12.5px;
     color:#8a8168;
@@ -339,6 +340,7 @@
   }
   .history-tag.lowd{background:var(--vodafone);}
   .history-tag.beginners{background:var(--instapay);}
+  .history-tag.sunday{background:var(--zizo);}
   .history-actions{display:flex; gap:6px; align-items:center;}
   .history-actions button{
     background:none; border:1px solid #e0dacb; color:#a08f77;
@@ -396,6 +398,7 @@
     <div class="type-select">
       <button class="type-btn" id="btnLowd" onclick="setType('lowd')">بطولة Low D (الأربع)</button>
       <button class="type-btn" id="btnBeginners" onclick="setType('beginners')">بطولة Beginners (الاتنين)</button>
+      <button class="type-btn" id="btnSunday" onclick="setType('sunday')">دورة الأحد</button>
     </div>
     <div class="type-note" id="typeNote">اختار نوع البطولة الأول</div>
   </div>
@@ -442,13 +445,15 @@
   </div>
 
   <div class="card" id="groupsCard">
-    <h2>4. المجموعات والمباريات</h2>
-    <div class="row-inline" style="margin-top:0;">
-      <label for="groupImageInput" class="primary" style="display:inline-block; cursor:pointer;">📷 ارفع صور المجموعات</label>
-      <input type="file" id="groupImageInput" accept="image/*" multiple style="display:none;" onchange="handleGroupImages(this.files)">
-    </div>
-    <div id="ocrStatus" style="font-size:12px; color:#8a8168; margin-top:6px;"></div>
-    <textarea id="groupsInput" style="margin-top:10px;" placeholder="مجموعة 1
+    <h2>4. <span id="matchesCardTitle">المجموعات والمباريات</span></h2>
+
+    <div id="groupsSection">
+      <div class="row-inline" style="margin-top:0;">
+        <label for="groupImageInput" class="primary" style="display:inline-block; cursor:pointer;">📷 ارفع صور المجموعات</label>
+        <input type="file" id="groupImageInput" accept="image/*" multiple style="display:none;" onchange="handleGroupImages(this.files)">
+      </div>
+      <div id="ocrStatus" style="font-size:12px; color:#8a8168; margin-top:6px;"></div>
+      <textarea id="groupsInput" style="margin-top:10px;" placeholder="مجموعة 1
 تيم حامد ودرباله
 تيم عبدالله ورضا
 تيم جعفر وعمر
@@ -456,11 +461,25 @@
 
 مجموعة 2
 تيم ..."></textarea>
-    <div class="row-inline">
-      <button class="primary" onclick="parseGroups()">استخرج المجموعات والماتشات</button>
-      <button class="ghost" onclick="resetGroups()">مسح المجموعات</button>
+      <div class="row-inline">
+        <button class="primary" onclick="parseGroups()">استخرج المجموعات والماتشات</button>
+        <button class="ghost" onclick="resetGroups()">مسح المجموعات</button>
+      </div>
+      <div id="groupsOutput" style="margin-top:14px;"></div>
     </div>
-    <div id="groupsOutput" style="margin-top:14px;"></div>
+
+    <div id="roundRobinSection" style="display:none;">
+      <textarea id="roundRobinInput" placeholder="1- تيم حامد ودرباله
+2- تيم صبري ونسيم
+3- تيم عبدالله وحسن الشيتاني
+4- تيم عمار واحمد الشربيني
+5- تيم مروان وموري"></textarea>
+      <div class="row-inline">
+        <button class="primary" onclick="parseRoundRobin()">استخرج الماتشات</button>
+        <button class="ghost" onclick="resetRoundRobin()">مسح</button>
+      </div>
+      <div id="roundRobinOutput" style="margin-top:14px;"></div>
+    </div>
   </div>
 
   <div class="card" id="knockoutCard">
@@ -503,6 +522,9 @@ let currentType = null; // 'lowd' | 'beginners' | null
 let players = []; // {name, status: null|'cash'|'instapay'|'vodafone'|'zizo'|'makram'}
 let groups = []; // {name, teams:[...], matches:[{a,b,scoreA,scoreB,manualWinner}], override:null|[...]}
 let knockout = null; // {pairs:[{aGroupIdx,bGroupIdx,confirmedA,confirmedB,scoreA,scoreB,manualWinner}]}
+let roundRobin = null; // {teams:[...], matches:[{round,court,a,b,scoreA,scoreB,manualWinner}], override:null}
+let editingPairingGroupIndex = null;
+let editingPairingSelected = [];
 let semifinal = null; // {tiedPending:{tiedTeams,otherTeams}} | {byeTeam, decider:{a,b,scoreA,scoreB,manualWinner}, final:{a,b,scoreA,scoreB,manualWinner}}
 let history = []; // saved tournaments
 const STORAGE_KEY = 'tournament-current-v2';
@@ -523,6 +545,8 @@ function saveState(){
       groups: groups,
       knockout: knockout,
       semifinal: semifinal,
+      roundRobinInput: document.getElementById('roundRobinInput').value,
+      roundRobin: roundRobin,
       history: history
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -573,6 +597,8 @@ function loadState(){
       groups = data.groups || [];
       knockout = data.knockout || null;
       semifinal = data.semifinal || null;
+      document.getElementById('roundRobinInput').value = data.roundRobinInput || '';
+      roundRobin = data.roundRobin || null;
       history = data.history || [];
 
       updateTypeUI();
@@ -587,6 +613,7 @@ function loadState(){
       }
       renderKnockout();
       renderSemiFinal();
+      renderRoundRobin();
       renderHistory();
       setBadge('اتحفظ ✓');
     } else {
@@ -611,8 +638,10 @@ function setType(t){
 function updateTypeUI(){
   const btnLowd = document.getElementById('btnLowd');
   const btnBeginners = document.getElementById('btnBeginners');
+  const btnSunday = document.getElementById('btnSunday');
   btnLowd.classList.remove('active-lowd');
   btnBeginners.classList.remove('active-beginners');
+  btnSunday.classList.remove('active-sunday');
   const note = document.getElementById('typeNote');
   if(currentType === 'lowd'){
     btnLowd.classList.add('active-lowd');
@@ -620,9 +649,19 @@ function updateTypeUI(){
   } else if(currentType === 'beginners'){
     btnBeginners.classList.add('active-beginners');
     note.textContent = 'بطولة Beginners - من غير متابعة نزول';
+  } else if(currentType === 'sunday'){
+    btnSunday.classList.add('active-sunday');
+    note.textContent = 'دورة الأحد - كل الفرق بتواجه بعض، من غير مجموعات';
   } else {
     note.textContent = 'اختار نوع البطولة الأول';
   }
+
+  const isSunday = currentType === 'sunday';
+  document.getElementById('groupsSection').style.display = isSunday ? 'none' : 'block';
+  document.getElementById('roundRobinSection').style.display = isSunday ? 'block' : 'none';
+  document.getElementById('matchesCardTitle').textContent = isSunday ? 'الدورة - المباريات' : 'المجموعات والمباريات';
+  document.getElementById('knockoutCard').style.display = isSunday ? 'none' : 'block';
+  document.getElementById('semifinalCard').style.display = isSunday ? 'none' : 'block';
 }
 
 /* ---------- Teams / players ---------- */
@@ -1011,9 +1050,33 @@ function renderGroups(){
       `;
     }).join('');
 
+    const canEditPairing = g.teams.length === 4 && g.matches[0] && g.matches[0].role === 'seed';
+    const editingThis = editingPairingGroupIndex === gi;
+    let pairingPanelHtml = '';
+    if(editingThis){
+      const chips = g.teams.map(t=>{
+        const sel = editingPairingSelected.includes(t);
+        return `<button class="ghost" style="font-size:12px;padding:5px 10px;margin:3px;${sel?'background:var(--court);color:#fff;border-color:var(--court);':''}" onclick="toggleTeamSelection(${gi},'${t.replace(/'/g,"\\'")}')">${t}</button>`;
+      }).join('');
+      pairingPanelHtml = `
+        <div style="background:var(--unpaid-bg);border-radius:10px;padding:10px;margin-bottom:10px;">
+          <div style="font-size:12.5px;color:#8a8168;margin-bottom:6px;">اختار التيمين اللي فعلاً لعبوا الماتش الأول مع بعض:</div>
+          <div style="display:flex;flex-wrap:wrap;">${chips}</div>
+          <div class="row-inline">
+            <button class="primary" onclick="confirmEditPairing(${gi})">تأكيد</button>
+            <button class="ghost" onclick="toggleEditPairing(${gi})">إلغاء</button>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="group-block">
-        <h3>${g.name}</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h3 style="margin:0;">${g.name}</h3>
+          ${canEditPairing ? `<button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="toggleEditPairing(${gi})">🔄 مين لعب مع مين فعلاً؟</button>` : ''}
+        </div>
+        ${pairingPanelHtml}
         ${matchesHtml}
         <table class="standings-table">
           <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق الأشواط</th></tr></thead>
@@ -1023,6 +1086,54 @@ function renderGroups(){
       </div>
     `;
   }).join('');
+}
+
+function toggleEditPairing(gi){
+  if(editingPairingGroupIndex === gi){
+    editingPairingGroupIndex = null;
+  } else {
+    editingPairingGroupIndex = gi;
+    editingPairingSelected = [];
+  }
+  renderGroups();
+}
+
+function toggleTeamSelection(gi, teamName){
+  if(editingPairingGroupIndex !== gi) return;
+  const idx = editingPairingSelected.indexOf(teamName);
+  if(idx !== -1){
+    editingPairingSelected.splice(idx,1);
+  } else {
+    if(editingPairingSelected.length >= 2){
+      alert('اختار تيمين بس للماتش الأول');
+      return;
+    }
+    editingPairingSelected.push(teamName);
+  }
+  renderGroups();
+}
+
+function confirmEditPairing(gi){
+  if(editingPairingSelected.length !== 2){
+    alert('لازم تختار تيمين بالظبط');
+    return;
+  }
+  if(!confirm('هيتصفر أي نتايج متسجلة في المجموعة دي عشان الأزواج بتتغير، متأكد؟')) return;
+  const g = groups[gi];
+  const [a,b] = editingPairingSelected;
+  const others = g.teams.filter(t=>t!==a && t!==b);
+  g.matches = [];
+  g.matches.push({role:'seed', a:a, b:b, scoreA:'', scoreB:'', manualWinner:null});
+  g.matches.push({role:'seed', a:others[0], b:others[1], scoreA:'', scoreB:'', manualWinner:null});
+  g.matches.push({role:'cross', ref:[0,1], mode:'ww', scoreA:'', scoreB:'', manualWinner:null});
+  g.matches.push({role:'cross', ref:[0,1], mode:'ll', scoreA:'', scoreB:'', manualWinner:null});
+  g.matches.push({role:'cross', ref:[0,1], mode:'lw', scoreA:'', scoreB:'', manualWinner:null});
+  g.matches.push({role:'cross', ref:[0,1], mode:'wl', scoreA:'', scoreB:'', manualWinner:null});
+  g.override = null;
+  editingPairingGroupIndex = null;
+  editingPairingSelected = [];
+  renderGroups();
+  saveState();
 }
 
 function setScore(gi, mi, side, value){
@@ -1077,6 +1188,256 @@ function resetOrder(gi){
 }
 
 document.getElementById('groupsInput').addEventListener('input', saveState);
+
+/* ---------- Sunday round-robin (all teams play each other, no groups) ---------- */
+function circleMethodSchedule(teamsInput){
+  let teams = [...teamsInput];
+  if(teams.length % 2 !== 0) teams.push(null); // bye
+  const n = teams.length;
+  const half = n/2;
+  let arr = [...teams];
+  const rounds = [];
+  for(let r=0; r<n-1; r++){
+    const roundPairs = [];
+    for(let i=0;i<half;i++){
+      const a = arr[i];
+      const b = arr[n-1-i];
+      if(a!=null && b!=null) roundPairs.push([a,b]);
+    }
+    rounds.push(roundPairs);
+    const fixed = arr[0];
+    const rest = arr.slice(1);
+    rest.unshift(rest.pop());
+    arr = [fixed, ...rest];
+  }
+  return rounds;
+}
+
+function parseRoundRobin(){
+  const raw = document.getElementById('roundRobinInput').value;
+  const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  const teams = [];
+  lines.forEach(line=>{
+    let stripped = line.replace(/^\s*\d+\s*[-.)،]?\s*/,'').trim();
+    let clean = stripped.replace(/تيم\s*/,'').trim();
+    if(!clean) return;
+    const idx = clean.indexOf(' و');
+    let p1, p2;
+    if(idx !== -1){
+      p1 = clean.slice(0, idx).trim();
+      p2 = clean.slice(idx+2).trim();
+    } else {
+      p1 = clean; p2 = '';
+    }
+    const teamName = p2 ? `${p1} و${p2}` : p1;
+    if(teamName) teams.push(teamName);
+  });
+
+  if(teams.length < 2){
+    alert('محتاج تيمين على الأقل، تأكد من الفورمات');
+    return;
+  }
+
+  const rounds = circleMethodSchedule(teams);
+  const matches = [];
+  rounds.forEach((roundPairs, ri)=>{
+    roundPairs.forEach((pair, pi)=>{
+      matches.push({round:ri+1, court:pi+1, a:pair[0], b:pair[1], scoreA:'', scoreB:'', manualWinner:null});
+    });
+  });
+
+  roundRobin = {teams, matches, override:null};
+  renderRoundRobin();
+  saveState();
+}
+
+function computeRRStandings(rr){
+  const stats = {};
+  rr.teams.forEach(t=> stats[t] = {team:t, wins:0, diff:0});
+  rr.matches.forEach(m=>{
+    const winner = getMatchWinner(m);
+    if(winner) stats[winner].wins++;
+    const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+    const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+    if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb)){
+      stats[m.a].diff += (sa-sb);
+      stats[m.b].diff += (sb-sa);
+    }
+  });
+
+  let arr = Object.values(stats);
+  if(rr.override && rr.override.length===arr.length && rr.override.every(t=>stats[t])){
+    arr = rr.override.map(name=>stats[name]);
+  } else {
+    arr.sort((x,y)=>{
+      if(y.wins !== x.wins) return y.wins - x.wins;
+      if(y.diff !== x.diff) return y.diff - x.diff;
+      const match = rr.matches.find(m => (m.a===x.team && m.b===y.team) || (m.a===y.team && m.b===x.team));
+      if(match){
+        const w = getMatchWinner(match);
+        if(w === x.team) return -1;
+        if(w === y.team) return 1;
+      }
+      return 0;
+    });
+  }
+  return arr;
+}
+
+function isTiedUnresolvedRR(rr, x, y){
+  if(x.wins !== y.wins) return false;
+  if(x.diff !== y.diff) return false;
+  const match = rr.matches.find(m => (m.a===x.team && m.b===y.team) || (m.a===y.team && m.b===x.team));
+  if(match){
+    const w = getMatchWinner(match);
+    if(w) return false;
+  }
+  return true;
+}
+
+function setRRScore(mi, side, value){
+  const m = roundRobin.matches[mi];
+  if(side==='a') m.scoreA = value; else m.scoreB = value;
+  renderRoundRobin();
+  saveState();
+}
+
+function setRRWinner(mi, side){
+  const m = roundRobin.matches[mi];
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb) return;
+  const team = side==='a' ? m.a : m.b;
+  const wasSelected = (m.manualWinner === team);
+  if(wasSelected){
+    m.manualWinner = null;
+    if(side==='a' && m.scoreA==='6' && (m.scoreB===''||m.scoreB==null)) m.scoreA = '';
+    if(side==='b' && m.scoreB==='6' && (m.scoreA===''||m.scoreA==null)) m.scoreB = '';
+  } else {
+    m.manualWinner = team;
+    if(side==='a' && (m.scoreA===''||m.scoreA==null)) m.scoreA = '6';
+    if(side==='b' && (m.scoreB===''||m.scoreB==null)) m.scoreB = '6';
+  }
+  renderRoundRobin();
+  saveState();
+}
+
+function swapRRStanding(i){
+  const standings = computeRRStandings(roundRobin);
+  const order = standings.map(s=>s.team);
+  const tmp = order[i]; order[i] = order[i+1]; order[i+1] = tmp;
+  roundRobin.override = order;
+  renderRoundRobin();
+  saveState();
+}
+
+function resetRROrder(){
+  roundRobin.override = null;
+  renderRoundRobin();
+  saveState();
+}
+
+function resetRoundRobin(){
+  if(!confirm('هيمسح كل ماتشات الدورة، متأكد؟')) return;
+  roundRobin = null;
+  document.getElementById('roundRobinInput').value = '';
+  document.getElementById('roundRobinOutput').innerHTML = '';
+  saveState();
+}
+
+function renderRRRoundsHtml(rr, interactive){
+  const byRound = {};
+  rr.matches.forEach((m, mi)=>{
+    if(!byRound[m.round]) byRound[m.round] = [];
+    byRound[m.round].push({m, mi});
+  });
+  const roundNumbers = Object.keys(byRound).map(Number).sort((a,b)=>a-b);
+  return roundNumbers.map(rn=>{
+    const entries = byRound[rn];
+    const playing = new Set();
+    entries.forEach(({m})=>{ playing.add(m.a); playing.add(m.b); });
+    const resting = rr.teams.filter(t=>!playing.has(t));
+    const matchesHtml = entries.map(({m, mi})=>{
+      const winner = getMatchWinner(m);
+      if(interactive){
+        return `
+          <div class="match-row">
+            <div style="font-size:10px;color:#a89e88;min-width:44px;">ملعب ${m.court}</div>
+            <button class="team-btn ${winner===m.a?'winner':''}" onclick="setRRWinner(${mi},'a')">${m.a}</button>
+            <div class="score-inputs">
+              <input type="number" value="${m.scoreA}" placeholder="-" onchange="setRRScore(${mi},'a',this.value)">
+              <span>:</span>
+              <input type="number" value="${m.scoreB}" placeholder="-" onchange="setRRScore(${mi},'b',this.value)">
+            </div>
+            <button class="team-btn ${winner===m.b?'winner':''}" onclick="setRRWinner(${mi},'b')">${m.b}</button>
+          </div>
+        `;
+      }
+      return `<div style="font-size:12.5px;padding:3px 0;">ملعب ${m.court}: ${m.a} <b>${m.scoreA||'?'}</b> - <b>${m.scoreB||'?'}</b> ${m.b} ${winner?`(فاز: ${winner})`:''}</div>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12.5px;font-weight:700;color:var(--court);margin-bottom:4px;">الجولة ${rn}${resting.length ? ` <span style="font-weight:400;color:#a89e88;">(مستريح: ${resting.join('، ')})</span>` : ''}</div>
+        ${matchesHtml}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderRoundRobin(){
+  const out = document.getElementById('roundRobinOutput');
+  if(!roundRobin || !roundRobin.matches || roundRobin.matches.length===0){
+    out.innerHTML = '<div class="empty-hint">لسه مفيش ماتشات - حط ليستة التيمات ودوس "استخرج الماتشات"</div>';
+    return;
+  }
+
+  const roundsHtml = renderRRRoundsHtml(roundRobin, true);
+
+  const standings = computeRRStandings(roundRobin);
+  const rowsHtml = standings.map((s, si)=>{
+    let tieHtml = '';
+    if(si < standings.length-1 && isTiedUnresolvedRR(roundRobin, s, standings[si+1])){
+      tieHtml = `<div class="tie-row">🟡 متعادلين <button onclick="swapRRStanding(${si})">بدّل الترتيب</button></div>`;
+    }
+    const rankClass = si===0 ? 'rank1' : (si===1 ? 'rank2' : '');
+    return `
+      <tr class="${rankClass}">
+        <td>${si+1}</td>
+        <td>${s.team}</td>
+        <td>${s.wins}</td>
+        <td>${s.diff>0?'+':''}${s.diff}</td>
+      </tr>
+      ${tieHtml ? `<tr><td colspan="4">${tieHtml}</td></tr>` : ''}
+    `;
+  }).join('');
+
+  out.innerHTML = `
+    ${roundsHtml}
+    <h3 style="font-size:13.5px;margin:12px 0 6px;color:var(--court);">الترتيب العام</h3>
+    <table class="standings-table">
+      <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق الأشواط</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    ${roundRobin.override ? `<div class="reset-order"><button onclick="resetRROrder()">إعادة الترتيب التلقائي</button></div>` : ''}
+  `;
+}
+
+function renderRRHistoryBlock(rr){
+  const roundsHtml = renderRRRoundsHtml(rr, false);
+  const standings = computeRRStandings(rr);
+  const rows = standings.map((s,si)=>`<tr><td>${si+1}</td><td>${s.team}</td><td>${s.wins}</td><td>${s.diff>0?'+':''}${s.diff}</td></tr>`).join('');
+  return `
+    <h3 style="font-size:13px;margin:10px 0 4px;">ماتشات الدورة</h3>
+    ${roundsHtml}
+    <h3 style="font-size:13px;margin:10px 0 4px;">الترتيب النهائي</h3>
+    <table class="standings-table">
+      <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+document.getElementById('roundRobinInput').addEventListener('input', saveState);
 
 function resetGroups(){
   if(!confirm('هيمسح المجموعات والماتشات كلها، متأكد؟')) return;
@@ -1289,10 +1650,10 @@ function renderKnockout(){
 /* ---------- Archive ---------- */
 function saveTournament(){
   if(!currentType){
-    alert('اختار نوع البطولة الأول (Low D ولا Beginners) قبل الحفظ');
+    alert('اختار نوع البطولة الأول قبل الحفظ');
     return;
   }
-  if(players.length === 0 && groups.length === 0){
+  if(groups.length === 0 && !roundRobin){
     alert('مفيش بيانات لحفظها لسه');
     return;
   }
@@ -1303,13 +1664,11 @@ function saveTournament(){
     type: currentType,
     date: new Date().toISOString(),
     label: label,
-    teamsInput: document.getElementById('teamsInput').value,
-    price: document.getElementById('priceInput').value,
-    players: JSON.parse(JSON.stringify(players)),
     groupsInput: document.getElementById('groupsInput').value,
     groups: JSON.parse(JSON.stringify(groups)),
     knockout: knockout ? JSON.parse(JSON.stringify(knockout)) : null,
-    semifinal: semifinal ? JSON.parse(JSON.stringify(semifinal)) : null
+    semifinal: semifinal ? JSON.parse(JSON.stringify(semifinal)) : null,
+    roundRobin: roundRobin ? JSON.parse(JSON.stringify(roundRobin)) : null
   };
   history.unshift(entry);
   saveState();
@@ -1323,14 +1682,17 @@ function startNewTournament(){
   groups = [];
   knockout = null;
   semifinal = null;
+  roundRobin = null;
   currentType = null;
   document.getElementById('teamsInput').value = '';
   document.getElementById('groupsInput').value = '';
+  document.getElementById('roundRobinInput').value = '';
   document.getElementById('playersCard').style.display = 'none';
   document.getElementById('totalsCard').style.display = 'none';
   document.getElementById('groupsOutput').innerHTML = '';
   document.getElementById('knockoutOutput').innerHTML = '';
   document.getElementById('semifinalOutput').innerHTML = '';
+  document.getElementById('roundRobinOutput').innerHTML = '';
   updateTypeUI();
   saveState();
 }
@@ -1389,33 +1751,26 @@ function renderHistory(){
     return;
   }
   list.innerHTML = history.map(h=>{
-    const price = parseFloat(h.price) || 0;
-    let received = 0;
-    const methodTotals = {cash:0, instapay:0, vodafone:0, zizo:0, makram:0};
-    (h.players||[]).forEach(p=>{
-      if(p.payments && p.payments.length > 0){
-        // entries saved during the brief split-payment version
-        p.payments.forEach(pay=>{
-          const amt = parseFloat(pay.amount) || 0;
-          received += amt;
-          methodTotals[pay.method] = (methodTotals[pay.method]||0) + amt;
-        });
-      } else if(p.status){
-        received += price;
-        methodTotals[p.status] = (methodTotals[p.status]||0) + price;
-      }
-    });
-    const groupsHtml = (h.groups||[]).map(g=>{
+    const typeLabel = h.type==='lowd' ? 'Low D' : (h.type==='beginners' ? 'Beginners' : 'دورة الأحد');
+
+    const groupsHtml = (h.type !== 'sunday') ? (h.groups||[]).map(g=>{
+      const matchesText = g.matches.map((m,mi)=>{
+        const r = resolveMatchTeams(g, mi);
+        if(!r) return `<div style="font-size:12px;color:#c2baa8;padding:2px 0;">ماتش ${mi+1}: متلعبش</div>`;
+        const w = getResolvedWinner(g, mi);
+        return `<div style="font-size:12.5px;padding:2px 0;">${r.a} <b>${m.scoreA||'?'}</b> - <b>${m.scoreB||'?'}</b> ${r.b} ${w?`(فاز: ${w})`:''}</div>`;
+      }).join('');
       const standings = computeStandings(g);
       const rows = standings.map((s,si)=>`<tr><td>${si+1}</td><td>${s.team}</td><td>${s.wins}</td><td>${s.diff>0?'+':''}${s.diff}</td></tr>`).join('');
       return `<h3 style="font-size:13px;margin:10px 0 4px;">${g.name}</h3>
+        ${matchesText}
         <table class="standings-table">
           <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
-    }).join('');
+    }).join('') : '';
 
-    const knockoutHtml = (h.knockout && h.knockout.pairs && h.knockout.pairs.length) ? `
+    const knockoutHtml = (h.type !== 'sunday' && h.knockout && h.knockout.pairs && h.knockout.pairs.length) ? `
       <h3 style="font-size:13px;margin:10px 0 4px;">قرعة الدور الوسيط</h3>
       ${h.knockout.pairs.map(m=>{
         const r = knockoutPairResolved(h.groups||[], m);
@@ -1427,7 +1782,7 @@ function renderHistory(){
     ` : '';
 
     let championHtml = '';
-    if(h.semifinal && h.semifinal.final){
+    if(h.type !== 'sunday' && h.semifinal && h.semifinal.final){
       const fm = h.semifinal.final;
       const champion = getMatchWinner(fm);
       if(champion){
@@ -1444,32 +1799,24 @@ function renderHistory(){
       }
     }
 
+    const sundayHtml = (h.type === 'sunday' && h.roundRobin) ? renderRRHistoryBlock(h.roundRobin) : '';
+
     return `
       <div class="history-item">
         <div class="history-head" onclick="toggleHistoryDetail('${h.id}')">
           <div>
             <span class="history-title">${h.label}</span>
-            <span class="history-tag ${h.type}">${h.type==='lowd'?'Low D':'Beginners'}</span>
+            <span class="history-tag ${h.type}">${typeLabel}</span>
           </div>
           <div class="history-actions">
             <button onclick="event.stopPropagation(); deleteHistoryEntry('${h.id}')">حذف</button>
           </div>
         </div>
         <div class="history-detail" id="hd-${h.id}">
-          <div class="hd-summary">
-            <span>عدد اللاعبين: <b>${(h.players||[]).length}</b></span>
-            <span>المستلم: <b>${received.toLocaleString()}</b> من ${(price*(h.players||[]).length).toLocaleString()}</span>
-          </div>
-          <div class="hd-summary">
-            <span>كاش: <b>${methodTotals.cash.toLocaleString()}</b></span>
-            <span>انستاباي: <b>${methodTotals.instapay.toLocaleString()}</b></span>
-            <span>فودافون: <b>${methodTotals.vodafone.toLocaleString()}</b></span>
-            <span>زيزو: <b>${methodTotals.zizo.toLocaleString()}</b></span>
-            <span>مكرم: <b>${methodTotals.makram.toLocaleString()}</b></span>
-          </div>
-          ${groupsHtml || '<div class="empty-hint">مفيش مجموعات محفوظة في البطولة دي</div>'}
+          ${groupsHtml || (h.type!=='sunday' ? '<div class="empty-hint">مفيش مجموعات محفوظة في البطولة دي</div>' : '')}
           ${knockoutHtml}
           ${championHtml}
+          ${sundayHtml}
         </div>
       </div>
     `;
