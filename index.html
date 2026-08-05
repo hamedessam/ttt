@@ -879,24 +879,21 @@ function parseGroups(){
   newGroups.forEach(g=>{
     g.matches = [];
     if(g.teams.length === 4){
-      // random pairing: M1 is a random pair of the 4 teams, M2 is whoever's left; M3..M6 are revealed as M1/M2 results come in
+      // random pairing: M1 and M2 are seed matches; M3 (winners) decides 1st/2nd fast; M4 (losers) decides 3rd/4th last, low priority
       const order = shuffleArray([0,1,2,3]);
       const t = order.map(idx=>g.teams[idx]);
       g.matches.push({role:'seed', a:t[0], b:t[1], scoreA:'', scoreB:'', manualWinner:null}); // M1
       g.matches.push({role:'seed', a:t[2], b:t[3], scoreA:'', scoreB:'', manualWinner:null}); // M2
-      g.matches.push({role:'cross', ref:[0,1], mode:'ww', scoreA:'', scoreB:'', manualWinner:null}); // M3: winner1 v winner2
-      g.matches.push({role:'cross', ref:[0,1], mode:'ll', scoreA:'', scoreB:'', manualWinner:null}); // M4: loser1 v loser2
-      g.matches.push({role:'cross', ref:[0,1], mode:'lw', scoreA:'', scoreB:'', manualWinner:null}); // M5: loser1 v winner2
-      g.matches.push({role:'cross', ref:[0,1], mode:'wl', scoreA:'', scoreB:'', manualWinner:null}); // M6: winner1 v loser2
+      g.matches.push({role:'winners', ref:[0,1], scoreA:'', scoreB:'', manualWinner:null});   // M3: winner(M1) v winner(M2) -> 1st/2nd
+      g.matches.push({role:'losers', ref:[0,1], scoreA:'', scoreB:'', manualWinner:null});    // M4: loser(M1) v loser(M2) -> 3rd/4th
     } else {
-      // fallback for group sizes other than 4: plain full round-robin, all matches shown from the start
+      // fallback for group sizes other than 4: plain full round-robin listing
       for(let i=0;i<g.teams.length;i++){
         for(let j=i+1;j<g.teams.length;j++){
           g.matches.push({role:'seed', a:g.teams[i], b:g.teams[j], scoreA:'', scoreB:'', manualWinner:null});
         }
       }
     }
-    g.override = null;
   });
 
   if(newGroups.length === 0 || newGroups.every(g=>g.teams.length===0)){
@@ -929,10 +926,8 @@ function resolveMatchTeams(g, mi){
   if(!wA || !wB) return null;
   const lA = (wA === seedA.a) ? seedA.b : seedA.a;
   const lB = (wB === seedB.a) ? seedB.b : seedB.a;
-  if(m.mode === 'ww') return {a:wA, b:wB};
-  if(m.mode === 'll') return {a:lA, b:lB};
-  if(m.mode === 'lw') return {a:lA, b:wB};
-  if(m.mode === 'wl') return {a:wA, b:lB};
+  if(m.role === 'winners') return {a:wA, b:wB};
+  if(m.role === 'losers') return {a:lA, b:lB};
   return null;
 }
 
@@ -949,60 +944,28 @@ function getResolvedWinner(g, mi){
   return null;
 }
 
-function findResolvedMatch(g, teamX, teamY){
-  for(let mi=0; mi<g.matches.length; mi++){
-    const r = resolveMatchTeams(g, mi);
-    if(!r) continue;
-    if((r.a===teamX && r.b===teamY) || (r.a===teamY && r.b===teamX)) return mi;
+// fast bracket ranking: 1st/2nd resolve as soon as the "winners" match (M3) is decided;
+// 3rd/4th resolve once the "losers" match (M4) is decided, and are lower priority
+function resolveGroupRanking(g){
+  if(!g.matches[2] || g.matches[0].role !== 'seed'){
+    return {first:null, second:null, third:null, fourth:null};
   }
-  return null;
+  let first=null, second=null, third=null, fourth=null;
+  const r3 = resolveMatchTeams(g, 2);
+  if(r3){
+    const w3 = getResolvedWinner(g, 2);
+    if(w3){ first = w3; second = (w3===r3.a) ? r3.b : r3.a; }
+  }
+  const r4 = resolveMatchTeams(g, 3);
+  if(r4){
+    const w4 = getResolvedWinner(g, 3);
+    if(w4){ third = w4; fourth = (w4===r4.a) ? r4.b : r4.a; }
+  }
+  return {first, second, third, fourth};
 }
 
-function computeStandings(g){
-  const stats = {};
-  g.teams.forEach(t=> stats[t] = {team:t, wins:0, diff:0});
-  g.matches.forEach((m, mi)=>{
-    const r = resolveMatchTeams(g, mi);
-    if(!r) return;
-    const winner = getResolvedWinner(g, mi);
-    if(winner) stats[winner].wins++;
-    const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
-    const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
-    if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb)){
-      stats[r.a].diff += (sa-sb);
-      stats[r.b].diff += (sb-sa);
-    }
-  });
-
-  let arr = Object.values(stats);
-
-  if(g.override && g.override.length===arr.length && g.override.every(t=>stats[t])){
-    arr = g.override.map(name=>stats[name]);
-  } else {
-    arr.sort((x,y)=>{
-      if(y.wins !== x.wins) return y.wins - x.wins;
-      if(y.diff !== x.diff) return y.diff - x.diff;
-      const mi = findResolvedMatch(g, x.team, y.team);
-      if(mi != null){
-        const w = getResolvedWinner(g, mi);
-        if(w === x.team) return -1;
-        if(w === y.team) return 1;
-      }
-      return 0;
-    });
-  }
-  return arr;
-}
-
-function isTiedUnresolved(g, x, y){
-  if(x.wins !== y.wins) return false;
-  if(x.diff !== y.diff) return false;
-  const mi = findResolvedMatch(g, x.team, y.team);
-  if(mi != null){
-    const w = getResolvedWinner(g, mi);
-    if(w) return false;
-  }
-  return true;
+function groupLabel(gi){
+  return String.fromCharCode(65+gi);
 }
 
 function renderGroups(){
@@ -1011,44 +974,40 @@ function renderGroups(){
     const matchesHtml = g.matches.map((m, mi)=>{
       const r = resolveMatchTeams(g, mi);
       if(!r){
+        const hint = mi===2 ? 'هيتحدد بعد الماتش 1 والماتش 2 - ده اللي بيحدد الأول والتاني' : (mi===3 ? 'هيتحدد بعد الماتش 1 والماتش 2 - ده بس تحصيل حاصل (3 و4)، مش مستعجل' : 'هيتحدد لاحقًا');
         return `
           <div class="match-row" style="opacity:0.55;">
-            <div style="width:100%; text-align:center; font-size:12.5px; color:#a89e88;">🔒 هيتحدد بعد نتيجة الماتش 1 والماتش 2</div>
+            <div style="width:100%; text-align:center; font-size:12.5px; color:#a89e88;">🔒 ${hint}</div>
           </div>
         `;
       }
       const winner = getResolvedWinner(g, mi);
+      const badge = mi===2
+        ? '<div style="font-size:10px;color:var(--cash);margin-bottom:2px;">⭐ الماتش المهم - بيحدد الأول والتاني</div>'
+        : (mi===3 ? '<div style="font-size:10px;color:#c2baa8;margin-bottom:2px;">تحصيل حاصل (3 و4) - مش مستعجل</div>' : '');
       return `
-        <div class="match-row">
-          <button class="team-btn ${winner===r.a?'winner':''}" onclick="setManualWinner(${gi},${mi},'a')">${r.a}</button>
-          <div class="score-inputs">
-            <input type="number" value="${m.scoreA}" placeholder="-" onchange="setScore(${gi},${mi},'a',this.value)">
-            <span>:</span>
-            <input type="number" value="${m.scoreB}" placeholder="-" onchange="setScore(${gi},${mi},'b',this.value)">
+        <div>
+          ${badge}
+          <div class="match-row">
+            <button class="team-btn ${winner===r.a?'winner':''}" onclick="setManualWinner(${gi},${mi},'a')">${r.a}</button>
+            <div class="score-inputs">
+              <input type="number" value="${m.scoreA}" placeholder="-" onchange="setScore(${gi},${mi},'a',this.value)">
+              <span>:</span>
+              <input type="number" value="${m.scoreB}" placeholder="-" onchange="setScore(${gi},${mi},'b',this.value)">
+            </div>
+            <button class="team-btn ${winner===r.b?'winner':''}" onclick="setManualWinner(${gi},${mi},'b')">${r.b}</button>
           </div>
-          <button class="team-btn ${winner===r.b?'winner':''}" onclick="setManualWinner(${gi},${mi},'b')">${r.b}</button>
         </div>
       `;
     }).join('');
 
-    const standings = computeStandings(g);
-    const rowsHtml = standings.map((s, si)=>{
-      let tieHtml = '';
-      if(si < standings.length-1 && isTiedUnresolved(g, s, standings[si+1])){
-        tieHtml = `<div class="tie-row">🟡 متعادلين <button onclick="swapStanding(${gi},${si})">بدّل الترتيب</button></div>`;
-      }
-      const outClass = si >= standings.length-2 ? 'rank-out' : '';
-      const rankClass = si===0 ? 'rank1' : (si===1 ? 'rank2' : outClass);
-      return `
-        <tr class="${rankClass}">
-          <td>${si+1}</td>
-          <td>${s.team}</td>
-          <td>${s.wins}</td>
-          <td>${s.diff>0?'+':''}${s.diff}</td>
-        </tr>
-        ${tieHtml ? `<tr><td colspan="4">${tieHtml}</td></tr>` : ''}
-      `;
-    }).join('');
+    const ranking = resolveGroupRanking(g);
+    const rowsHtml = `
+      <tr class="rank1"><td>1</td><td>${ranking.first || '؟ لسه'}</td></tr>
+      <tr class="rank2"><td>2</td><td>${ranking.second || '؟ لسه'}</td></tr>
+      <tr class="rank-out"><td>3</td><td>${ranking.third || '؟ لسه'}</td></tr>
+      <tr class="rank-out"><td>4</td><td>${ranking.fourth || '؟ لسه'}</td></tr>
+    `;
 
     const canEditPairing = g.teams.length === 4 && g.matches[0] && g.matches[0].role === 'seed';
     const editingThis = editingPairingGroupIndex === gi;
@@ -1073,16 +1032,15 @@ function renderGroups(){
     return `
       <div class="group-block">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <h3 style="margin:0;">${g.name}</h3>
+          <h3 style="margin:0;">${g.name} <span style="color:#a89e88;font-weight:400;font-size:12px;">(${groupLabel(gi)})</span></h3>
           ${canEditPairing ? `<button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="toggleEditPairing(${gi})">🔄 مين لعب مع مين فعلاً؟</button>` : ''}
         </div>
         ${pairingPanelHtml}
         ${matchesHtml}
         <table class="standings-table">
-          <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق الأشواط</th></tr></thead>
+          <thead><tr><th>المركز</th><th>الفريق</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
-        ${g.override ? `<div class="reset-order"><button onclick="resetOrder(${gi})">إعادة الترتيب التلقائي</button></div>` : ''}
       </div>
     `;
   }).join('');
@@ -1125,11 +1083,8 @@ function confirmEditPairing(gi){
   g.matches = [];
   g.matches.push({role:'seed', a:a, b:b, scoreA:'', scoreB:'', manualWinner:null});
   g.matches.push({role:'seed', a:others[0], b:others[1], scoreA:'', scoreB:'', manualWinner:null});
-  g.matches.push({role:'cross', ref:[0,1], mode:'ww', scoreA:'', scoreB:'', manualWinner:null});
-  g.matches.push({role:'cross', ref:[0,1], mode:'ll', scoreA:'', scoreB:'', manualWinner:null});
-  g.matches.push({role:'cross', ref:[0,1], mode:'lw', scoreA:'', scoreB:'', manualWinner:null});
-  g.matches.push({role:'cross', ref:[0,1], mode:'wl', scoreA:'', scoreB:'', manualWinner:null});
-  g.override = null;
+  g.matches.push({role:'winners', ref:[0,1], scoreA:'', scoreB:'', manualWinner:null});
+  g.matches.push({role:'losers', ref:[0,1], scoreA:'', scoreB:'', manualWinner:null});
   editingPairingGroupIndex = null;
   editingPairingSelected = [];
   renderGroups();
@@ -1167,22 +1122,6 @@ function setManualWinner(gi, mi, side){
     if(side==='a' && (m.scoreA===''||m.scoreA==null)) m.scoreA = '6';
     if(side==='b' && (m.scoreB===''||m.scoreB==null)) m.scoreB = '6';
   }
-  renderGroups();
-  saveState();
-}
-
-function swapStanding(gi, i){
-  const g = groups[gi];
-  const standings = computeStandings(g);
-  const order = standings.map(s=>s.team);
-  const tmp = order[i]; order[i] = order[i+1]; order[i+1] = tmp;
-  g.override = order;
-  renderGroups();
-  saveState();
-}
-
-function resetOrder(gi){
-  groups[gi].override = null;
   renderGroups();
   saveState();
 }
@@ -1461,21 +1400,14 @@ function shuffleArray(arr){
   return a;
 }
 
-function groupLabel(gi){
-  return `مج${gi+1}`;
-}
-
-function isGroupComplete(g){
-  return g.matches.every((m, mi)=> getResolvedWinner(g, mi) !== null);
-}
-
 function resolveQualifier(groupsArr, groupIdx, rank, confirmed){
   if(confirmed) return confirmed;
   const g = groupsArr[groupIdx];
   if(!g) return null;
-  if(!isGroupComplete(g)) return null;
-  const standings = computeStandings(g);
-  return standings[rank-1] ? standings[rank-1].team : null;
+  const ranking = resolveGroupRanking(g);
+  if(rank === 1) return ranking.first;
+  if(rank === 2) return ranking.second;
+  return null;
 }
 
 function knockoutPairResolved(groupsArr, m){
@@ -1600,8 +1532,8 @@ function renderKnockout(){
   }
   out.innerHTML = knockout.pairs.map((m,i)=>{
     const r = knockoutPairResolved(groups, m);
-    const labelA = `${groupLabel(m.aGroupIdx)} - الأول`;
-    const labelB = `${groupLabel(m.bGroupIdx)} - التاني`;
+    const labelA = `${groupLabel(m.aGroupIdx)}1`;
+    const labelB = `${groupLabel(m.bGroupIdx)}2`;
 
     function sideHtml(side, resolvedName, confirmed, groupIdx, rank){
       if(resolvedName){
@@ -1760,12 +1692,17 @@ function renderHistory(){
         const w = getResolvedWinner(g, mi);
         return `<div style="font-size:12.5px;padding:2px 0;">${r.a} <b>${m.scoreA||'?'}</b> - <b>${m.scoreB||'?'}</b> ${r.b} ${w?`(فاز: ${w})`:''}</div>`;
       }).join('');
-      const standings = computeStandings(g);
-      const rows = standings.map((s,si)=>`<tr><td>${si+1}</td><td>${s.team}</td><td>${s.wins}</td><td>${s.diff>0?'+':''}${s.diff}</td></tr>`).join('');
+      const ranking = resolveGroupRanking(g);
+      const rows = `
+        <tr><td>1</td><td>${ranking.first || '؟'}</td></tr>
+        <tr><td>2</td><td>${ranking.second || '؟'}</td></tr>
+        <tr><td>3</td><td>${ranking.third || '؟'}</td></tr>
+        <tr><td>4</td><td>${ranking.fourth || '؟'}</td></tr>
+      `;
       return `<h3 style="font-size:13px;margin:10px 0 4px;">${g.name}</h3>
         ${matchesText}
         <table class="standings-table">
-          <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق</th></tr></thead>
+          <thead><tr><th>المركز</th><th>الفريق</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>`;
     }).join('') : '';
