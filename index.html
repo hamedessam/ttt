@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>حساب البطولة</title>
+<title>Padel Tournaments KFS</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0f4c4f">
 <link rel="icon" href="icon-192.png">
@@ -223,6 +223,7 @@
   .methods button.sel-vodafone{background:var(--vodafone); border-color:var(--vodafone); color:#fff;}
   .methods button.sel-zizo{background:var(--zizo); border-color:var(--zizo); color:#fff;}
   .methods button.sel-makram{background:var(--makram); border-color:var(--makram); color:#fff;}
+  .methods button.sel-cashback{background:#6b8f6f; border-color:#6b8f6f; color:#fff;}
   .methods button:hover{border-color:var(--court);}
 
   .totals{
@@ -387,7 +388,7 @@
 
 <header>
   <div class="save-badge" id="saveBadge">جاري التحميل...</div>
-  <h1>🎾 حساب البطولة</h1>
+  <h1>🎾 Padel Tournaments KFS</h1>
   <p>الصق ليستة التيمات، وسجّل مين حاسب ومين لأ</p>
 </header>
 
@@ -442,6 +443,9 @@
       <h2 style="font-size:13.5px;color:#a89e88;">مستنيين حساب من:</h2>
       <div class="unpaid-list" id="unpaidList">الكل حاسب 🎉</div>
     </div>
+    <div class="row-inline">
+      <button class="primary" onclick="copyPaymentReport()">📋 انسخ الحساب للواتساب</button>
+    </div>
   </div>
 
   <div class="card" id="groupsCard">
@@ -486,6 +490,7 @@
     <h2>5. قرعة الدور الوسيط (الأول ضد التاني)</h2>
     <div class="row-inline">
       <button class="primary" onclick="generateKnockout()">🎲 اعمل القرعة</button>
+      <button class="ghost" onclick="renderKnockout()">🔄 حدّث الأسامي</button>
       <button class="ghost" onclick="clearKnockout()">مسح القرعة</button>
     </div>
     <div id="knockoutOutput" style="margin-top:14px;"></div>
@@ -525,6 +530,7 @@ let groups = []; // {name, teams:[...], matches:[{a,b,scoreA,scoreB,manualWinner
 let knockout = null; // {pairs:[{aGroupIdx,bGroupIdx,confirmedA,confirmedB,scoreA,scoreB,manualWinner}]}
 let editingPairingGroupIndex = null;
 let editingPairingSelected = [];
+let editingLateGroupIndex = null;
 let semifinal = null; // {tiedPending:{tiedTeams,otherTeams}} | {byeTeam, decider:{a,b,scoreA,scoreB,manualWinner}, final:{a,b,scoreA,scoreB,manualWinner}}
 let history = []; // saved tournaments
 const STORAGE_KEY = 'tournament-current-v2';
@@ -704,6 +710,7 @@ function renderPlayers(){
           <button class="${p.status==='vodafone'?'sel-vodafone':''}" onclick="setStatus(${i},'vodafone')">فودافون كاش</button>
           <button class="${p.status==='zizo'?'sel-zizo':''}" onclick="setStatus(${i},'zizo')">مع زيزو</button>
           <button class="${p.status==='makram'?'sel-makram':''}" onclick="setStatus(${i},'makram')">مع مكرم</button>
+          <button class="${p.status==='cashback'?'sel-cashback':''}" onclick="setStatus(${i},'cashback')">كاش باك (مركز أول)</button>
         </div>
       </div>
     `;
@@ -724,6 +731,7 @@ function updateTotals(){
   const vodafoneCount = players.filter(p=>p.status==='vodafone').length;
   const zizoCount = players.filter(p=>p.status==='zizo').length;
   const makramCount = players.filter(p=>p.status==='makram').length;
+  const cashbackCount = players.filter(p=>p.status==='cashback').length;
   const unpaid = players.filter(p=>!p.status);
 
   document.getElementById('totCash').textContent = (cashCount*price).toLocaleString();
@@ -734,15 +742,65 @@ function updateTotals(){
   document.getElementById('totUnpaidCount').textContent = unpaid.length;
 
   const received = (cashCount+instapayCount+vodafoneCount+zizoCount+makramCount)*price;
-  const expected = players.length*price;
+  const expected = (players.length - cashbackCount)*price;
   document.getElementById('totReceived').textContent = received.toLocaleString() + ' جنيه';
-  document.getElementById('totExpectedLbl').textContent = `من ${expected.toLocaleString()} جنيه (${players.length} لاعب × ${price})`;
+  document.getElementById('totExpectedLbl').textContent = `من ${expected.toLocaleString()} جنيه (${players.length - cashbackCount} لاعب × ${price}${cashbackCount ? ` - ${cashbackCount} كاش باك` : ''})`;
 
   const unpaidList = document.getElementById('unpaidList');
   if(unpaid.length === 0){
     unpaidList.textContent = 'الكل حاسب 🎉';
   } else {
     unpaidList.innerHTML = unpaid.map(p=>p.name).join(' • ');
+  }
+}
+
+function joinArabicNames(names){
+  if(names.length===0) return '';
+  if(names.length===1) return names[0];
+  if(names.length===2) return `${names[0]} و${names[1]}`;
+  return `${names.slice(0,-1).join('، ')} و${names[names.length-1]}`;
+}
+
+function generatePaymentReport(){
+  const price = parseFloat(document.getElementById('priceInput').value) || 0;
+  const methodTotals = {cash:0, instapay:0, vodafone:0, zizo:0, makram:0};
+  const methodNames = {zizo:[], makram:[]};
+  players.forEach(p=>{
+    if(p.status && p.status!=='cashback' && methodTotals.hasOwnProperty(p.status)){
+      methodTotals[p.status] += price;
+      if(p.status==='zizo' || p.status==='makram') methodNames[p.status].push(p.name);
+    }
+  });
+  const labels = {cash:'كاش', instapay:'انستاباي', vodafone:'فودافون كاش', zizo:'مع زيزو', makram:'مع مكرم'};
+  const order = ['cash','instapay','vodafone','zizo','makram'];
+  const lines = [];
+  let total = 0;
+  order.forEach(method=>{
+    const amt = methodTotals[method];
+    if(amt > 0){
+      total += amt;
+      let line = `${amt} ${labels[method]}`;
+      if((method==='zizo'||method==='makram') && methodNames[method].length){
+        line += ` (${joinArabicNames(methodNames[method])})`;
+      }
+      lines.push(line);
+    }
+  });
+  lines.push('');
+  lines.push(`الاجمالي ${total}`);
+  return lines.join('\n');
+}
+
+function copyPaymentReport(){
+  const text = generatePaymentReport();
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>{
+      alert('اتنسخ الحساب ✓ الصقه في الواتساب');
+    }).catch(()=>{
+      prompt('انسخ النص ده يدوي:', text);
+    });
+  } else {
+    prompt('انسخ النص ده يدوي:', text);
   }
 }
 
@@ -880,6 +938,7 @@ function parseGroups(){
       }
     }
     g.override = null;
+    g.lateTeams = {};
   });
 
   if(newGroups.length === 0 || newGroups.every(g=>g.teams.length===0)){
@@ -991,6 +1050,14 @@ function isTiedUnresolved(g, x, y){
 function renderGroups(){
   const out = document.getElementById('groupsOutput');
   out.innerHTML = groups.map((g, gi)=>{
+    const lateTeams = g.lateTeams || {};
+    const lateBadge = (teamName)=>{
+      const status = lateTeams[teamName];
+      if(status === 'minor') return ' <span style="font-size:10px;color:var(--partial);">⏰ -3 أشواط</span>';
+      if(status === 'major') return ' <span style="font-size:10px;color:var(--vodafone);">⏰ خسر الماتش</span>';
+      return '';
+    };
+
     const matchesHtml = g.matches.map((m, mi)=>{
       const r = resolveMatchTeams(g, mi);
       if(!r){
@@ -1003,13 +1070,13 @@ function renderGroups(){
       const winner = getResolvedWinner(g, mi);
       return `
         <div class="match-row">
-          <button class="team-btn ${winner===r.a?'winner':''}" onclick="setManualWinner(${gi},${mi},'a')">${r.a}</button>
+          <button class="team-btn ${winner===r.a?'winner':''}" onclick="setManualWinner(${gi},${mi},'a')">${r.a}${lateBadge(r.a)}</button>
           <div class="score-inputs">
             <input type="number" value="${m.scoreA}" placeholder="-" onchange="setScore(${gi},${mi},'a',this.value)">
             <span>:</span>
             <input type="number" value="${m.scoreB}" placeholder="-" onchange="setScore(${gi},${mi},'b',this.value)">
           </div>
-          <button class="team-btn ${winner===r.b?'winner':''}" onclick="setManualWinner(${gi},${mi},'b')">${r.b}</button>
+          <button class="team-btn ${winner===r.b?'winner':''}" onclick="setManualWinner(${gi},${mi},'b')">${r.b}${lateBadge(r.b)}</button>
         </div>
       `;
     }).join('');
@@ -1053,12 +1120,43 @@ function renderGroups(){
       `;
     }
 
+    const lateEditingThis = editingLateGroupIndex === gi;
+    let latePanelHtml = '';
+    if(lateEditingThis){
+      const rows = g.teams.map(t=>{
+        const status = lateTeams[t] || null;
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #f1ede2;">
+            <span style="font-size:12.5px;">${t}</span>
+            <div style="display:flex;gap:4px;">
+              <button class="ghost" style="font-size:11px;padding:3px 8px;${!status?'background:var(--court);color:#fff;':''}" onclick="setLateStatus(${gi},'${t.replace(/'/g,"\\'")}',null)">وصل</button>
+              <button class="ghost" style="font-size:11px;padding:3px 8px;${status==='minor'?'background:var(--partial);color:#fff;border-color:var(--partial);':''}" onclick="setLateStatus(${gi},'${t.replace(/'/g,"\\'")}','minor')">10 دقايق (-3)</button>
+              <button class="ghost" style="font-size:11px;padding:3px 8px;${status==='major'?'background:var(--vodafone);color:#fff;border-color:var(--vodafone);':''}" onclick="setLateStatus(${gi},'${t.replace(/'/g,"\\'")}','major')">نص ساعة (خسارة)</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+      latePanelHtml = `
+        <div style="background:var(--unpaid-bg);border-radius:10px;padding:10px;margin-bottom:10px;">
+          <div style="font-size:12.5px;color:#8a8168;margin-bottom:6px;">حدد حالة كل فريق:</div>
+          ${rows}
+          <div class="row-inline">
+            <button class="ghost" onclick="toggleLatePanel(${gi})">قفل</button>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="group-block">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
           <h3 style="margin:0;">${g.name}</h3>
-          ${canEditPairing ? `<button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="toggleEditPairing(${gi})">🔄 مين لعب مع مين فعلاً؟</button>` : ''}
+          <div style="display:flex;gap:6px;">
+            <button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="toggleLatePanel(${gi})">⏰ متأخرين؟</button>
+            ${canEditPairing ? `<button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="toggleEditPairing(${gi})">🔄 مين لعب مع مين فعلاً؟</button>` : ''}
+          </div>
         </div>
+        ${latePanelHtml}
         ${pairingPanelHtml}
         ${matchesHtml}
         <table class="standings-table">
@@ -1069,6 +1167,37 @@ function renderGroups(){
       </div>
     `;
   }).join('');
+}
+
+function toggleLatePanel(gi){
+  editingLateGroupIndex = (editingLateGroupIndex === gi) ? null : gi;
+  renderGroups();
+}
+
+function setLateStatus(gi, teamName, status){
+  const g = groups[gi];
+  if(!g.lateTeams) g.lateTeams = {};
+  if(status){
+    g.lateTeams[teamName] = status;
+  } else {
+    delete g.lateTeams[teamName];
+  }
+
+  if(status === 'major'){
+    // auto-forfeit their first (seed) match if it hasn't already got a real result
+    const seedIndex = g.matches.findIndex(m => m.role==='seed' && (m.a===teamName || m.b===teamName));
+    if(seedIndex !== -1){
+      const m = g.matches[seedIndex];
+      if(getMatchWinner(m) === null){
+        if(m.a === teamName){ m.scoreA='0'; m.scoreB='6'; m.manualWinner=m.b; }
+        else { m.scoreA='6'; m.scoreB='0'; m.manualWinner=m.a; }
+      }
+    }
+  }
+
+  renderGroups();
+  renderKnockout();
+  saveState();
 }
 
 function toggleEditPairing(gi){
@@ -1116,6 +1245,7 @@ function confirmEditPairing(gi){
   editingPairingGroupIndex = null;
   editingPairingSelected = [];
   renderGroups();
+  renderKnockout();
   saveState();
 }
 
@@ -1123,6 +1253,7 @@ function setScore(gi, mi, side, value){
   const m = groups[gi].matches[mi];
   if(side==='a') m.scoreA = value; else m.scoreB = value;
   renderGroups();
+  renderKnockout();
   saveState();
 }
 
@@ -1151,6 +1282,7 @@ function setManualWinner(gi, mi, side){
     if(side==='b' && (m.scoreB===''||m.scoreB==null)) m.scoreB = '6';
   }
   renderGroups();
+  renderKnockout();
   saveState();
 }
 
@@ -1161,12 +1293,14 @@ function swapStanding(gi, i){
   const tmp = order[i]; order[i] = order[i+1]; order[i+1] = tmp;
   g.override = order;
   renderGroups();
+  renderKnockout();
   saveState();
 }
 
 function resetOrder(gi){
   groups[gi].override = null;
   renderGroups();
+  renderKnockout();
   saveState();
 }
 
@@ -1491,7 +1625,10 @@ function renderHistory(){
       }).join('');
       const standings = computeStandings(g);
       const rows = standings.map((s,si)=>`<tr><td>${si+1}</td><td>${s.team}</td><td>${s.wins}</td><td>${s.diff>0?'+':''}${s.diff}</td></tr>`).join('');
+      const lateNames = Object.keys(g.lateTeams||{});
+      const lateText = lateNames.length ? `<div style="font-size:11.5px;color:var(--vodafone);padding:2px 0;">⏰ متأخرين: ${lateNames.map(n=>`${n} (${g.lateTeams[n]==='minor'?'-3 أشواط':'خسر الماتش'})`).join('، ')}</div>` : '';
       return `<h3 style="font-size:13px;margin:10px 0 4px;">${g.name}</h3>
+        ${lateText}
         ${matchesText}
         <table class="standings-table">
           <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق</th></tr></thead>

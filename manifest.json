@@ -1,7 +1,7 @@
 {
-  "name": "حساب البطولة",
-  "short_name": "حساب البطولة",
-  "description": "تطبيق لتتبع مدفوعات لاعبين بطولات البادل",
+  "name": "Padel Tournaments KFS",
+  "short_name": "Padel Tournaments KFS",
+  "description": "تطبيق لتنظيم بطولات البادل وحساب اللاعبين",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -11,17 +11,7 @@
   "lang": "ar",
   "dir": "rtl",
   "icons": [
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
   ]
 }
