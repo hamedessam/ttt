@@ -183,6 +183,7 @@
   .type-btn.active-lowd{background:var(--vodafone); border-color:var(--vodafone); color:#fff;}
   .type-btn.active-beginners{background:var(--instapay); border-color:var(--instapay); color:#fff;}
   .type-btn.active-sunday{background:var(--zizo); border-color:var(--zizo); color:#fff;}
+  .type-btn.active-thursday{background:var(--makram); border-color:var(--makram); color:#fff;}
   .type-note{
     font-size:12.5px;
     color:#8a8168;
@@ -342,6 +343,7 @@
   .history-tag.lowd{background:var(--vodafone);}
   .history-tag.beginners{background:var(--instapay);}
   .history-tag.sunday{background:var(--zizo);}
+  .history-tag.thursday{background:var(--makram);}
   .history-actions{display:flex; gap:6px; align-items:center;}
   .history-actions button{
     background:none; border:1px solid #e0dacb; color:#a08f77;
@@ -400,6 +402,7 @@
       <button class="type-btn" id="btnLowd" onclick="setType('lowd')">بطولة Low D (الأربع)</button>
       <button class="type-btn" id="btnBeginners" onclick="setType('beginners')">بطولة Beginners (الاتنين)</button>
       <button class="type-btn" id="btnSunday" onclick="setType('sunday')">دورة الأحد</button>
+      <button class="type-btn" id="btnThursday" onclick="setType('thursday')">بطولة الخميس</button>
     </div>
     <div class="type-note" id="typeNote">اختار نوع البطولة الأول</div>
   </div>
@@ -450,6 +453,22 @@
 
   <div class="card" id="groupsCard">
     <h2>4. <span id="matchesCardTitle">المجموعات والمباريات</span></h2>
+
+    <div id="thursdayChoiceSection" style="display:none;">
+      <div style="font-size:13px;color:#8a8168;margin-bottom:8px;">هتدخل التصنيفات وأنا أكوّن المجموعتين، ولا هتحط المجموعات جاهزة بنفسك؟</div>
+      <div class="row-inline" style="margin-top:0;">
+        <button class="primary" onclick="setThursdayMode('tiers')">تصنيفات</button>
+        <button class="primary" onclick="setThursdayMode('groups')">مجموعات جاهزة</button>
+      </div>
+    </div>
+
+    <div id="tiersSection" style="display:none;">
+      <div class="row-inline" style="margin-top:0;">
+        <button class="ghost" onclick="loadTeamsForTiers()">تحميل الفرق من بوكس اللاعبين</button>
+        <button class="ghost" onclick="setThursdayMode(null)">🔄 رجوع</button>
+      </div>
+      <div id="tiersOutput" style="margin-top:10px;"></div>
+    </div>
 
     <div id="groupsSection">
       <div class="row-inline" style="margin-top:0;">
@@ -524,10 +543,14 @@
 
 <script>
 
-let currentType = null; // 'lowd' | 'beginners' | null
+let currentType = null; // 'lowd' | 'beginners' | 'sunday' | 'thursday' | null
+let thursdayMode = null; // 'tiers' | 'groups' | null
+let thursdayTeams = [];
+let thursdayTierAssignments = {}; // teamName -> 'A1'|'A2'|...
 let players = []; // {name, status: null|'cash'|'instapay'|'vodafone'|'zizo'|'makram'}
 let groups = []; // {name, teams:[...], matches:[{a,b,scoreA,scoreB,manualWinner}], override:null|[...]}
 let knockout = null; // {pairs:[{aGroupIdx,bGroupIdx,confirmedA,confirmedB,scoreA,scoreB,manualWinner}]}
+let roundRobin = null; // {teams:[...], matches:[{round,court,a,b,scoreA,scoreB,manualWinner}], override:null}
 let editingPairingGroupIndex = null;
 let editingPairingSelected = [];
 let editingLateGroupIndex = null;
@@ -544,6 +567,9 @@ function saveState(){
   try{
     const data = {
       currentType: currentType,
+      thursdayMode: thursdayMode,
+      thursdayTeams: thursdayTeams,
+      thursdayTierAssignments: thursdayTierAssignments,
       teamsInput: document.getElementById('teamsInput').value,
       price: document.getElementById('priceInput').value,
       players: players,
@@ -551,6 +577,8 @@ function saveState(){
       groups: groups,
       knockout: knockout,
       semifinal: semifinal,
+      roundRobinInput: document.getElementById('roundRobinInput').value,
+      roundRobin: roundRobin,
       history: history
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -593,6 +621,9 @@ function loadState(){
     if(raw){
       const data = JSON.parse(raw);
       currentType = data.currentType || null;
+      thursdayMode = data.thursdayMode || null;
+      thursdayTeams = data.thursdayTeams || [];
+      thursdayTierAssignments = data.thursdayTierAssignments || {};
       document.getElementById('teamsInput').value = data.teamsInput || '';
       document.getElementById('priceInput').value = data.price || 130;
       const price = parseFloat(data.price) || 130;
@@ -601,9 +632,12 @@ function loadState(){
       groups = data.groups || [];
       knockout = data.knockout || null;
       semifinal = data.semifinal || null;
+      document.getElementById('roundRobinInput').value = data.roundRobinInput || '';
+      roundRobin = data.roundRobin || null;
       history = data.history || [];
 
       updateTypeUI();
+      renderTiersUI();
       if(players.length > 0){
         document.getElementById('playersCard').style.display = 'block';
         document.getElementById('totalsCard').style.display = 'block';
@@ -615,6 +649,7 @@ function loadState(){
       }
       renderKnockout();
       renderSemiFinal();
+      renderRoundRobin();
       renderHistory();
       setBadge('اتحفظ ✓');
     } else {
@@ -632,6 +667,7 @@ window.addEventListener('DOMContentLoaded', loadState);
 /* ---------- Tournament type ---------- */
 function setType(t){
   currentType = (currentType === t) ? null : t;
+  thursdayMode = null;
   updateTypeUI();
   saveState();
 }
@@ -639,8 +675,12 @@ function setType(t){
 function updateTypeUI(){
   const btnLowd = document.getElementById('btnLowd');
   const btnBeginners = document.getElementById('btnBeginners');
+  const btnSunday = document.getElementById('btnSunday');
+  const btnThursday = document.getElementById('btnThursday');
   btnLowd.classList.remove('active-lowd');
   btnBeginners.classList.remove('active-beginners');
+  btnSunday.classList.remove('active-sunday');
+  btnThursday.classList.remove('active-thursday');
   const note = document.getElementById('typeNote');
   if(currentType === 'lowd'){
     btnLowd.classList.add('active-lowd');
@@ -648,9 +688,163 @@ function updateTypeUI(){
   } else if(currentType === 'beginners'){
     btnBeginners.classList.add('active-beginners');
     note.textContent = 'بطولة Beginners - من غير متابعة نزول';
+  } else if(currentType === 'sunday'){
+    btnSunday.classList.add('active-sunday');
+    note.textContent = 'دورة الأحد - كل الفرق بتواجه بعض، من غير مجموعات';
+  } else if(currentType === 'thursday'){
+    btnThursday.classList.add('active-thursday');
+    note.textContent = 'بطولة الخميس - 8 فرق، مجموعتين';
   } else {
     note.textContent = 'اختار نوع البطولة الأول';
   }
+
+  const isSunday = currentType === 'sunday';
+  const isThursday = currentType === 'thursday';
+
+  document.getElementById('roundRobinSection').style.display = isSunday ? 'block' : 'none';
+  document.getElementById('thursdayChoiceSection').style.display = (isThursday && !thursdayMode) ? 'block' : 'none';
+  document.getElementById('tiersSection').style.display = (isThursday && thursdayMode==='tiers') ? 'block' : 'none';
+  const showGroupsSection = (!isSunday && !isThursday) || (isThursday && thursdayMode==='groups');
+  document.getElementById('groupsSection').style.display = showGroupsSection ? 'block' : 'none';
+
+  document.getElementById('matchesCardTitle').textContent = isSunday ? 'الدورة - المباريات' : 'المجموعات والمباريات';
+  document.getElementById('knockoutCard').style.display = isSunday ? 'none' : 'block';
+  document.getElementById('semifinalCard').style.display = isSunday ? 'none' : 'block';
+}
+
+function setThursdayMode(mode){
+  thursdayMode = mode;
+  updateTypeUI();
+  saveState();
+}
+
+function extractTeamName(line){
+  let stripped = line.trim().replace(/^\s*\d+\s*[-.)،]?\s*/,'').trim();
+  if(!stripped) return null;
+  let clean = stripped.replace(/تيم\s*/,'').trim();
+  if(!clean) return null;
+  const idx = clean.indexOf(' و');
+  let p1, p2;
+  if(idx !== -1){
+    p1 = clean.slice(0, idx).trim();
+    p2 = clean.slice(idx+2).trim();
+  } else {
+    p1 = clean; p2 = '';
+  }
+  return p2 ? `${p1} و${p2}` : p1;
+}
+
+function loadTeamsForTiers(){
+  const raw = document.getElementById('teamsInput').value;
+  const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  const teamNames = lines.map(extractTeamName).filter(Boolean);
+  if(teamNames.length !== 8){
+    alert(`لازم يكون فيه 8 فرق بالظبط في بوكس "ليستة التيمات" فوق (لقيت ${teamNames.length}). حط الفرق هناك الأول.`);
+    return;
+  }
+  thursdayTeams = teamNames;
+  thursdayTierAssignments = {};
+  renderTiersUI();
+  saveState();
+}
+
+function renderTiersUI(){
+  const out = document.getElementById('tiersOutput');
+  if(thursdayTeams.length === 0){
+    out.innerHTML = '';
+    return;
+  }
+  const tierSlots = ['A1','A2','B1','B2','C1','C2','D1','D2'];
+  const usedSlots = Object.values(thursdayTierAssignments);
+  const rows = thursdayTeams.map(team=>{
+    const current = thursdayTierAssignments[team] || '';
+    const options = tierSlots.map(slot=>{
+      const takenByOther = usedSlots.includes(slot) && current!==slot;
+      return `<option value="${slot}" ${slot===current?'selected':''} ${takenByOther?'disabled':''}>${slot}${takenByOther?' (متاخد)':''}</option>`;
+    }).join('');
+    return `
+      <div class="row-inline" style="justify-content:space-between; margin-top:6px;">
+        <span style="font-size:13px;">${team}</span>
+        <select onchange="setTierAssignment('${team.replace(/'/g,"\\'")}', this.value)">
+          <option value="">اختار تصنيف</option>
+          ${options}
+        </select>
+      </div>
+    `;
+  }).join('');
+  out.innerHTML = rows + `
+    <div class="row-inline">
+      <button class="primary" onclick="generateThursdayGroups()">كوّن المجموعتين</button>
+      <button class="ghost" onclick="resetThursdayTiers()">مسح</button>
+    </div>
+  `;
+}
+
+function setTierAssignment(team, slot){
+  Object.keys(thursdayTierAssignments).forEach(t=>{
+    if(thursdayTierAssignments[t] === slot) delete thursdayTierAssignments[t];
+  });
+  if(slot === ''){
+    delete thursdayTierAssignments[team];
+  } else {
+    thursdayTierAssignments[team] = slot;
+  }
+  renderTiersUI();
+  saveState();
+}
+
+function resetThursdayTiers(){
+  if(!confirm('هيمسح كل التصنيفات، متأكد؟')) return;
+  thursdayTeams = [];
+  thursdayTierAssignments = {};
+  renderTiersUI();
+  saveState();
+}
+
+function generateThursdayGroups(){
+  const tierSlots = ['A1','A2','B1','B2','C1','C2','D1','D2'];
+  const assigned = Object.values(thursdayTierAssignments);
+  if(assigned.length !== 8 || new Set(assigned).size !== 8){
+    alert('لازم كل التصنيفات التمنية (A1,A2,B1,B2,C1,C2,D1,D2) تتحدد لفرق مختلفة الأول');
+    return;
+  }
+  const slotToTeam = {};
+  Object.keys(thursdayTierAssignments).forEach(team=>{
+    slotToTeam[thursdayTierAssignments[team]] = team;
+  });
+
+  const tiers = ['A','B','C','D'];
+  const group1 = [], group2 = [];
+  tiers.forEach(t=>{
+    const opt1 = slotToTeam[t+'1'];
+    const opt2 = slotToTeam[t+'2'];
+    if(Math.random() < 0.5){ group1.push(opt1); group2.push(opt2); }
+    else { group1.push(opt2); group2.push(opt1); }
+  });
+
+  const newGroups = [
+    {name:'مجموعة 1', teams: shuffleArray(group1)},
+    {name:'مجموعة 2', teams: shuffleArray(group2)}
+  ];
+  newGroups.forEach(g=>{
+    g.matches = [];
+    const order = shuffleArray([0,1,2,3]);
+    const t = order.map(idx=>g.teams[idx]);
+    g.matches.push({role:'seed', a:t[0], b:t[1], scoreA:'', scoreB:'', manualWinner:null});
+    g.matches.push({role:'seed', a:t[2], b:t[3], scoreA:'', scoreB:'', manualWinner:null});
+    g.matches.push({role:'cross', ref:[0,1], mode:'ww', scoreA:'', scoreB:'', manualWinner:null});
+    g.matches.push({role:'cross', ref:[0,1], mode:'ll', scoreA:'', scoreB:'', manualWinner:null});
+    g.matches.push({role:'cross', ref:[0,1], mode:'lw', scoreA:'', scoreB:'', manualWinner:null});
+    g.matches.push({role:'cross', ref:[0,1], mode:'wl', scoreA:'', scoreB:'', manualWinner:null});
+    g.override = null;
+    g.lateTeams = {};
+  });
+
+  groups = newGroups;
+  document.getElementById('groupsInput').value = newGroups.map(g=>`${g.name}\n${g.teams.map(t=>'تيم '+t).join('\n')}`).join('\n\n');
+  renderGroups();
+  saveState();
+  alert('اتكونت المجموعتين ✓ انزل تحت شوية تلاقي المجموعات والماتشات جاهزة');
 }
 
 /* ---------- Teams / players ---------- */
@@ -703,7 +897,7 @@ function renderPlayers(){
     const paidClass = p.status ? 'paid' : '';
     return `
       <div class="player-row ${paidClass}">
-        <div class="pname">${p.name}</div>
+        <div class="pname">${p.name} <button class="ghost" style="font-size:10px;padding:2px 7px;" onclick="editPlayerName(${i})">✏️</button></div>
         <div class="methods">
           <button class="${p.status==='cash'?'sel-cash':''}" onclick="setStatus(${i},'cash')">كاش</button>
           <button class="${p.status==='instapay'?'sel-instapay':''}" onclick="setStatus(${i},'instapay')">انستاباي</button>
@@ -715,6 +909,14 @@ function renderPlayers(){
       </div>
     `;
   }).join('');
+}
+
+function editPlayerName(i){
+  const newName = prompt('اسم اللاعب الجديد:', players[i].name);
+  if(!newName || !newName.trim() || newName.trim()===players[i].name) return;
+  players[i].name = newName.trim();
+  renderPlayers();
+  saveState();
 }
 
 function setStatus(i, method){
@@ -1092,7 +1294,7 @@ function renderGroups(){
       return `
         <tr class="${rankClass}">
           <td>${si+1}</td>
-          <td>${s.team}</td>
+          <td>${s.team} <button class="ghost" style="font-size:10px;padding:2px 6px;" onclick="editTeamName(${gi},'${s.team.replace(/'/g,"\\'")}')">✏️</button></td>
           <td>${s.wins}</td>
           <td>${s.diff>0?'+':''}${s.diff}</td>
         </tr>
@@ -1197,6 +1399,74 @@ function setLateStatus(gi, teamName, status){
 
   renderGroups();
   renderKnockout();
+  saveState();
+}
+
+function renameTeamEverywhere(oldName, newName){
+  groups.forEach(g=>{
+    g.teams = g.teams.map(t=> t===oldName ? newName : t);
+    g.matches.forEach(m=>{
+      if(m.role==='seed'){
+        if(m.a===oldName) m.a=newName;
+        if(m.b===oldName) m.b=newName;
+      }
+      if(m.manualWinner===oldName) m.manualWinner=newName;
+    });
+    if(g.override) g.override = g.override.map(t=> t===oldName ? newName : t);
+    if(g.lateTeams && g.lateTeams[oldName]!==undefined){
+      g.lateTeams[newName] = g.lateTeams[oldName];
+      delete g.lateTeams[oldName];
+    }
+  });
+  if(knockout && knockout.pairs){
+    knockout.pairs.forEach(m=>{
+      if(m.confirmedA===oldName) m.confirmedA=newName;
+      if(m.confirmedB===oldName) m.confirmedB=newName;
+      if(m.manualWinner===oldName) m.manualWinner=newName;
+    });
+  }
+  if(semifinal){
+    if(semifinal.byeTeam===oldName) semifinal.byeTeam=newName;
+    ['decider','final'].forEach(key=>{
+      const m = semifinal[key];
+      if(m){
+        if(m.a===oldName) m.a=newName;
+        if(m.b===oldName) m.b=newName;
+        if(m.manualWinner===oldName) m.manualWinner=newName;
+      }
+    });
+    if(semifinal.tiedPending){
+      semifinal.tiedPending.tiedTeams = semifinal.tiedPending.tiedTeams.map(t=>t===oldName?newName:t);
+      semifinal.tiedPending.otherTeams = semifinal.tiedPending.otherTeams.map(t=>t===oldName?newName:t);
+    }
+  }
+  if(roundRobin){
+    roundRobin.teams = roundRobin.teams.map(t=>t===oldName?newName:t);
+    roundRobin.matches.forEach(m=>{
+      if(m.a===oldName) m.a=newName;
+      if(m.b===oldName) m.b=newName;
+      if(m.manualWinner===oldName) m.manualWinner=newName;
+    });
+    if(roundRobin.override) roundRobin.override = roundRobin.override.map(t=>t===oldName?newName:t);
+  }
+}
+
+function editTeamName(gi, oldName){
+  const newName = prompt('اسم التيم الجديد:', oldName);
+  if(!newName || !newName.trim() || newName.trim()===oldName) return;
+  renameTeamEverywhere(oldName, newName.trim());
+  renderGroups();
+  renderKnockout();
+  renderSemiFinal();
+  renderRoundRobin();
+  saveState();
+}
+
+function editRRTeamName(oldName){
+  const newName = prompt('اسم التيم الجديد:', oldName);
+  if(!newName || !newName.trim() || newName.trim()===oldName) return;
+  renameTeamEverywhere(oldName, newName.trim());
+  renderRoundRobin();
   saveState();
 }
 
@@ -1317,6 +1587,245 @@ function resetGroups(){
   renderKnockout();
   saveState();
 }
+
+/* ---------- Sunday round-robin (all teams play each other, no groups) ---------- */
+function circleMethodSchedule(teamsInput){
+  let teams = [...teamsInput];
+  if(teams.length % 2 !== 0) teams.push(null); // bye
+  const n = teams.length;
+  const half = n/2;
+  let arr = [...teams];
+  const rounds = [];
+  for(let r=0; r<n-1; r++){
+    const roundPairs = [];
+    for(let i=0;i<half;i++){
+      const a = arr[i];
+      const b = arr[n-1-i];
+      if(a!=null && b!=null) roundPairs.push([a,b]);
+    }
+    rounds.push(roundPairs);
+    const fixed = arr[0];
+    const rest = arr.slice(1);
+    rest.unshift(rest.pop());
+    arr = [fixed, ...rest];
+  }
+  return rounds;
+}
+
+function parseRoundRobin(){
+  const raw = document.getElementById('roundRobinInput').value;
+  const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  const teams = [];
+  lines.forEach(line=>{
+    const teamName = extractTeamName(line);
+    if(teamName) teams.push(teamName);
+  });
+
+  if(teams.length < 2){
+    alert('محتاج تيمين على الأقل، تأكد من الفورمات');
+    return;
+  }
+
+  const rounds = circleMethodSchedule(teams);
+  const matches = [];
+  rounds.forEach((roundPairs, ri)=>{
+    roundPairs.forEach((pair, pi)=>{
+      matches.push({round:ri+1, court:pi+1, a:pair[0], b:pair[1], scoreA:'', scoreB:'', manualWinner:null});
+    });
+  });
+
+  roundRobin = {teams, matches, override:null};
+  renderRoundRobin();
+  saveState();
+}
+
+function computeRRStandings(rr){
+  const stats = {};
+  rr.teams.forEach(t=> stats[t] = {team:t, wins:0, diff:0});
+  rr.matches.forEach(m=>{
+    const winner = getMatchWinner(m);
+    if(winner) stats[winner].wins++;
+    const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+    const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+    if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb)){
+      stats[m.a].diff += (sa-sb);
+      stats[m.b].diff += (sb-sa);
+    }
+  });
+
+  let arr = Object.values(stats);
+  if(rr.override && rr.override.length===arr.length && rr.override.every(t=>stats[t])){
+    arr = rr.override.map(name=>stats[name]);
+  } else {
+    arr.sort((x,y)=>{
+      if(y.wins !== x.wins) return y.wins - x.wins;
+      if(y.diff !== x.diff) return y.diff - x.diff;
+      const match = rr.matches.find(m => (m.a===x.team && m.b===y.team) || (m.a===y.team && m.b===x.team));
+      if(match){
+        const w = getMatchWinner(match);
+        if(w === x.team) return -1;
+        if(w === y.team) return 1;
+      }
+      return 0;
+    });
+  }
+  return arr;
+}
+
+function isTiedUnresolvedRR(rr, x, y){
+  if(x.wins !== y.wins) return false;
+  if(x.diff !== y.diff) return false;
+  const match = rr.matches.find(m => (m.a===x.team && m.b===y.team) || (m.a===y.team && m.b===x.team));
+  if(match){
+    const w = getMatchWinner(match);
+    if(w) return false;
+  }
+  return true;
+}
+
+function setRRScore(mi, side, value){
+  const m = roundRobin.matches[mi];
+  if(side==='a') m.scoreA = value; else m.scoreB = value;
+  renderRoundRobin();
+  saveState();
+}
+
+function setRRWinner(mi, side){
+  const m = roundRobin.matches[mi];
+  const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
+  const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
+  if(sa!=null && sb!=null && !isNaN(sa) && !isNaN(sb) && sa!==sb) return;
+  const team = side==='a' ? m.a : m.b;
+  const wasSelected = (m.manualWinner === team);
+  if(wasSelected){
+    m.manualWinner = null;
+    if(side==='a' && m.scoreA==='6' && (m.scoreB===''||m.scoreB==null)) m.scoreA = '';
+    if(side==='b' && m.scoreB==='6' && (m.scoreA===''||m.scoreA==null)) m.scoreB = '';
+  } else {
+    m.manualWinner = team;
+    if(side==='a' && (m.scoreA===''||m.scoreA==null)) m.scoreA = '6';
+    if(side==='b' && (m.scoreB===''||m.scoreB==null)) m.scoreB = '6';
+  }
+  renderRoundRobin();
+  saveState();
+}
+
+function swapRRStanding(i){
+  const standings = computeRRStandings(roundRobin);
+  const order = standings.map(s=>s.team);
+  const tmp = order[i]; order[i] = order[i+1]; order[i+1] = tmp;
+  roundRobin.override = order;
+  renderRoundRobin();
+  saveState();
+}
+
+function resetRROrder(){
+  roundRobin.override = null;
+  renderRoundRobin();
+  saveState();
+}
+
+function resetRoundRobin(){
+  if(!confirm('هيمسح كل ماتشات الدورة، متأكد؟')) return;
+  roundRobin = null;
+  document.getElementById('roundRobinInput').value = '';
+  document.getElementById('roundRobinOutput').innerHTML = '';
+  saveState();
+}
+
+function renderRRRoundsHtml(rr, interactive){
+  const byRound = {};
+  rr.matches.forEach((m, mi)=>{
+    if(!byRound[m.round]) byRound[m.round] = [];
+    byRound[m.round].push({m, mi});
+  });
+  const roundNumbers = Object.keys(byRound).map(Number).sort((a,b)=>a-b);
+  return roundNumbers.map(rn=>{
+    const entries = byRound[rn];
+    const playing = new Set();
+    entries.forEach(({m})=>{ playing.add(m.a); playing.add(m.b); });
+    const resting = rr.teams.filter(t=>!playing.has(t));
+    const matchesHtml = entries.map(({m, mi})=>{
+      const winner = getMatchWinner(m);
+      if(interactive){
+        return `
+          <div class="match-row">
+            <div style="font-size:10px;color:#a89e88;min-width:44px;">ملعب ${m.court}</div>
+            <button class="team-btn ${winner===m.a?'winner':''}" onclick="setRRWinner(${mi},'a')">${m.a}</button>
+            <div class="score-inputs">
+              <input type="number" value="${m.scoreA}" placeholder="-" onchange="setRRScore(${mi},'a',this.value)">
+              <span>:</span>
+              <input type="number" value="${m.scoreB}" placeholder="-" onchange="setRRScore(${mi},'b',this.value)">
+            </div>
+            <button class="team-btn ${winner===m.b?'winner':''}" onclick="setRRWinner(${mi},'b')">${m.b}</button>
+          </div>
+        `;
+      }
+      return `<div style="font-size:12.5px;padding:3px 0;">ملعب ${m.court}: ${m.a} <b>${m.scoreA||'?'}</b> - <b>${m.scoreB||'?'}</b> ${m.b} ${winner?`(فاز: ${winner})`:''}</div>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12.5px;font-weight:700;color:var(--court);margin-bottom:4px;">الجولة ${rn}${resting.length ? ` <span style="font-weight:400;color:#a89e88;">(مستريح: ${resting.join('، ')})</span>` : ''}</div>
+        ${matchesHtml}
+      </div>
+    `;
+  }).join('');
+}
+
+function renderRoundRobin(){
+  const out = document.getElementById('roundRobinOutput');
+  if(!roundRobin || !roundRobin.matches || roundRobin.matches.length===0){
+    out.innerHTML = '<div class="empty-hint">لسه مفيش ماتشات - حط ليستة التيمات ودوس "استخرج الماتشات"</div>';
+    return;
+  }
+
+  const roundsHtml = renderRRRoundsHtml(roundRobin, true);
+
+  const standings = computeRRStandings(roundRobin);
+  const rowsHtml = standings.map((s, si)=>{
+    let tieHtml = '';
+    if(si < standings.length-1 && isTiedUnresolvedRR(roundRobin, s, standings[si+1])){
+      tieHtml = `<div class="tie-row">🟡 متعادلين <button onclick="swapRRStanding(${si})">بدّل الترتيب</button></div>`;
+    }
+    const rankClass = si===0 ? 'rank1' : (si===1 ? 'rank2' : '');
+    return `
+      <tr class="${rankClass}">
+        <td>${si+1}</td>
+        <td>${s.team} <button class="ghost" style="font-size:10px;padding:2px 6px;" onclick="editRRTeamName('${s.team.replace(/'/g,"\\'")}')">✏️</button></td>
+        <td>${s.wins}</td>
+        <td>${s.diff>0?'+':''}${s.diff}</td>
+      </tr>
+      ${tieHtml ? `<tr><td colspan="4">${tieHtml}</td></tr>` : ''}
+    `;
+  }).join('');
+
+  out.innerHTML = `
+    ${roundsHtml}
+    <h3 style="font-size:13.5px;margin:12px 0 6px;color:var(--court);">الترتيب العام</h3>
+    <table class="standings-table">
+      <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق الأشواط</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    ${roundRobin.override ? `<div class="reset-order"><button onclick="resetRROrder()">إعادة الترتيب التلقائي</button></div>` : ''}
+  `;
+}
+
+function renderRRHistoryBlock(rr){
+  const roundsHtml = renderRRRoundsHtml(rr, false);
+  const standings = computeRRStandings(rr);
+  const rows = standings.map((s,si)=>`<tr><td>${si+1}</td><td>${s.team}</td><td>${s.wins}</td><td>${s.diff>0?'+':''}${s.diff}</td></tr>`).join('');
+  return `
+    <h3 style="font-size:13px;margin:10px 0 4px;">ماتشات الدورة</h3>
+    ${roundsHtml}
+    <h3 style="font-size:13px;margin:10px 0 4px;">الترتيب النهائي</h3>
+    <table class="standings-table">
+      <thead><tr><th>#</th><th>الفريق</th><th>فوز</th><th>فرق</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+document.getElementById('roundRobinInput').addEventListener('input', saveState);
 
 /* ---------- Knockout draw (1st vs 2nd across groups) ---------- */
 function shuffleArray(arr){
@@ -1517,10 +2026,10 @@ function renderKnockout(){
 /* ---------- Archive ---------- */
 function saveTournament(){
   if(!currentType){
-    alert('اختار نوع البطولة الأول (Low D ولا Beginners) قبل الحفظ');
+    alert('اختار نوع البطولة الأول قبل الحفظ');
     return;
   }
-  if(players.length === 0 && groups.length === 0){
+  if(players.length === 0 && groups.length === 0 && !roundRobin){
     alert('مفيش بيانات لحفظها لسه');
     return;
   }
@@ -1534,7 +2043,8 @@ function saveTournament(){
     groupsInput: document.getElementById('groupsInput').value,
     groups: JSON.parse(JSON.stringify(groups)),
     knockout: knockout ? JSON.parse(JSON.stringify(knockout)) : null,
-    semifinal: semifinal ? JSON.parse(JSON.stringify(semifinal)) : null
+    semifinal: semifinal ? JSON.parse(JSON.stringify(semifinal)) : null,
+    roundRobin: roundRobin ? JSON.parse(JSON.stringify(roundRobin)) : null
   };
   history.unshift(entry);
   saveState();
@@ -1548,14 +2058,21 @@ function startNewTournament(){
   groups = [];
   knockout = null;
   semifinal = null;
+  roundRobin = null;
   currentType = null;
+  thursdayMode = null;
+  thursdayTeams = [];
+  thursdayTierAssignments = {};
   document.getElementById('teamsInput').value = '';
   document.getElementById('groupsInput').value = '';
+  document.getElementById('roundRobinInput').value = '';
   document.getElementById('playersCard').style.display = 'none';
   document.getElementById('totalsCard').style.display = 'none';
   document.getElementById('groupsOutput').innerHTML = '';
   document.getElementById('knockoutOutput').innerHTML = '';
   document.getElementById('semifinalOutput').innerHTML = '';
+  document.getElementById('roundRobinOutput').innerHTML = '';
+  document.getElementById('tiersOutput').innerHTML = '';
   updateTypeUI();
   saveState();
 }
@@ -1614,7 +2131,7 @@ function renderHistory(){
     return;
   }
   list.innerHTML = history.map(h=>{
-    const typeLabel = h.type==='lowd' ? 'Low D' : (h.type==='beginners' ? 'Beginners' : 'دورة الأحد');
+    const typeLabel = h.type==='lowd' ? 'Low D' : (h.type==='beginners' ? 'Beginners' : (h.type==='thursday' ? 'بطولة الخميس' : 'دورة الأحد'));
 
     const groupsHtml = (h.type !== 'sunday') ? (h.groups||[]).map(g=>{
       const matchesText = g.matches.map((m,mi)=>{
@@ -1692,10 +2209,28 @@ function renderHistory(){
 /* ---------- Low D drop tracker ---------- */
 /* ---------- Semi-final (decider) + Final ---------- */
 function generateSemiFinal(){
-  if(!knockout || !knockout.pairs || knockout.pairs.length !== 3){
-    alert('محتاج قرعة الدور الوسيط تكون فيها 3 ماتشات بالظبط الأول');
+  if(!knockout || !knockout.pairs || (knockout.pairs.length !== 2 && knockout.pairs.length !== 3)){
+    alert('محتاج قرعة الدور الوسيط تكون فيها 2 أو 3 ماتشات بالظبط الأول');
     return;
   }
+
+  if(knockout.pairs.length === 2){
+    const w1 = knockoutPairWinner(groups, knockout.pairs[0]);
+    const w2 = knockoutPairWinner(groups, knockout.pairs[1]);
+    if(!w1 || !w2){
+      alert('محتاج نتيجة الماتشين الاتنين بتوع القرعة الأول');
+      return;
+    }
+    semifinal = {
+      byeTeam: null,
+      decider: null,
+      final: {a:w1, b:w2, scoreA:'', scoreB:'', manualWinner:null}
+    };
+    renderSemiFinal();
+    saveState();
+    return;
+  }
+
   const results = knockout.pairs.map(m=>({
     team: knockoutPairWinner(groups, m),
     margin: knockoutPairMargin(groups, m)
@@ -1841,21 +2376,28 @@ function renderSemiFinal(){
     return;
   }
 
-  // auto-build the final once the decider has a winner
-  const deciderWinner = getMatchWinner(semifinal.decider);
-  if(deciderWinner && !semifinal.final){
-    semifinal.final = {a:semifinal.byeTeam, b:deciderWinner, scoreA:'', scoreB:'', manualWinner:null};
-  }
-  // if decider result changes after the final was created, keep them in sync
-  if(semifinal.final && deciderWinner && semifinal.final.b !== deciderWinner && semifinal.final.a !== deciderWinner){
-    semifinal.final = {a:semifinal.byeTeam, b:deciderWinner, scoreA:'', scoreB:'', manualWinner:null};
+  // auto-build the final once the decider has a winner (only applies to the 3-group bye/decider structure)
+  const deciderWinner = semifinal.decider ? getMatchWinner(semifinal.decider) : null;
+  if(semifinal.decider){
+    if(deciderWinner && !semifinal.final){
+      semifinal.final = {a:semifinal.byeTeam, b:deciderWinner, scoreA:'', scoreB:'', manualWinner:null};
+    }
+    // if decider result changes after the final was created, keep them in sync
+    if(semifinal.final && deciderWinner && semifinal.final.b !== deciderWinner && semifinal.final.a !== deciderWinner){
+      semifinal.final = {a:semifinal.byeTeam, b:deciderWinner, scoreA:'', scoreB:'', manualWinner:null};
+    }
   }
 
-  let html = `<div style="font-size:12.5px;color:#8a8168;margin-bottom:6px;">صاعد مباشر للنهائي: <b>${semifinal.byeTeam}</b></div>`;
-  html += `<div style="font-size:11px;color:#a89e88;margin-bottom:4px;">ماتش تحديد المتأهل التاني للنهائي:</div>`;
-  html += renderMatchRowGeneric(semifinal.decider,
-    `setDeciderWinner('a')`, `setDeciderWinner('b')`,
-    `setDeciderScore('a',this.value)`, `setDeciderScore('b',this.value)`);
+  let html = '';
+  if(semifinal.byeTeam){
+    html += `<div style="font-size:12.5px;color:#8a8168;margin-bottom:6px;">صاعد مباشر للنهائي: <b>${semifinal.byeTeam}</b></div>`;
+  }
+  if(semifinal.decider){
+    html += `<div style="font-size:11px;color:#a89e88;margin-bottom:4px;">ماتش تحديد المتأهل التاني للنهائي:</div>`;
+    html += renderMatchRowGeneric(semifinal.decider,
+      `setDeciderWinner('a')`, `setDeciderWinner('b')`,
+      `setDeciderScore('a',this.value)`, `setDeciderScore('b',this.value)`);
+  }
 
   if(semifinal.final){
     html += `<div style="font-size:11px;color:#a89e88;margin:10px 0 4px;">🏆 النهائي:</div>`;
@@ -1866,7 +2408,7 @@ function renderSemiFinal(){
     const champion = getMatchWinner(semifinal.final);
     if(champion){
       const runnerUp = champion===semifinal.final.a ? semifinal.final.b : semifinal.final.a;
-      const third = deciderWinner===semifinal.final.a || deciderWinner===semifinal.final.b
+      const third = semifinal.decider && (deciderWinner===semifinal.final.a || deciderWinner===semifinal.final.b)
         ? (semifinal.decider.a===deciderWinner ? semifinal.decider.b : semifinal.decider.a)
         : null;
       html += `
