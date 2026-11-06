@@ -1598,7 +1598,8 @@ function renderGroups(){
       `;
     }).join('');
 
-    const canEditPairing = g.teams.length === 4 && g.matches[0] && g.matches[0].role === 'seed';
+    const canEditPairing = g.teams.length === 4 && g.matches[0] && g.matches[0].role === 'seed' && !g.flat;
+    const canOpenAll = g.teams.length === 4 && !g.flat && g.matches.some(m=>m.role==='cross');
     const editingThis = editingPairingGroupIndex === gi;
     let pairingPanelHtml = '';
     if(editingThis){
@@ -1649,8 +1650,9 @@ function renderGroups(){
       <div class="group-block ${groupHlClass(g)}">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;">
           <h3 style="margin:0;">${g.name}</h3>
-          <div style="display:flex;gap:6px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="toggleLatePanel(${gi})">⏰ متأخرين؟</button>
+            ${canOpenAll ? `<button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="openAllMatches(${gi})">🔓 افتح كل الماتشات</button>` : ''}
             ${canEditPairing ? `<button class="ghost" style="font-size:11px;padding:4px 10px;" onclick="toggleEditPairing(${gi})">🔄 مين لعب مع مين فعلاً؟</button>` : ''}
           </div>
         </div>
@@ -1665,6 +1667,37 @@ function renderGroups(){
       </div>
     `;
   }).join('');
+}
+
+// turns a seeded group into a flat list of all 6 pairings, keeping every result already entered
+function openAllMatches(gi){
+  const g = groups[gi];
+  if(!g || g.flat || !g.matches.some(m=>m.role==='cross')) return;
+  if(!confirm('المجموعة دي هتتحول لقايمة فيها الـ6 ماتشات كلهم مفتوحين، وكل النتايج اللي سجلتها هتفضل زي ما هي. مش هترجع للوضع المترتب تاني في المجموعة دي. متأكد؟')) return;
+  const key = (a,b)=>[a,b].sort().join('|');
+  const seen = new Set();
+  const flat = [];
+  g.matches.forEach((m, mi)=>{
+    const r = resolveMatchTeams(g, mi);
+    if(!r) return;
+    const nm = {role:'seed', a:r.a, b:r.b, scoreA:m.scoreA, scoreB:m.scoreB, manualWinner:m.manualWinner};
+    if(m.auto) nm.auto = true;
+    flat.push(nm);
+    seen.add(key(r.a, r.b));
+  });
+  for(let i=0;i<g.teams.length;i++){
+    for(let j=i+1;j<g.teams.length;j++){
+      if(!seen.has(key(g.teams[i], g.teams[j]))){
+        flat.push({role:'seed', a:g.teams[i], b:g.teams[j], scoreA:'', scoreB:'', manualWinner:null});
+      }
+    }
+  }
+  g.matches = flat;
+  g.flat = true;
+  if(editingPairingGroupIndex === gi){ editingPairingGroupIndex = null; editingPairingSelected = []; }
+  renderGroups();
+  renderKnockout();
+  saveState();
 }
 
 function toggleLatePanel(gi){
