@@ -400,7 +400,7 @@
   .drop-item.danger .drop-count{color:var(--vodafone);}
 
   /* score dropdown */
-  .score-inputs select{width:54px; padding:6px 2px; font-size:15px; font-weight:700; text-align:center; text-align-last:center;}
+  .score-inputs select{width:54px; padding:6px 2px; font-size:16px; font-weight:700; text-align:center; text-align-last:center;}
 
   /* highlight team */
   .find-btn{display:inline-block; padding:2px 6px; margin-inline-start:4px; font-size:12px; border-radius:10px; opacity:.55;}
@@ -416,7 +416,10 @@
   #searchFab{position:fixed; bottom:16px; left:16px; z-index:60; display:none; background:var(--court); color:var(--line); border:none; border-radius:30px; padding:12px 18px; font-family:'Cairo',sans-serif; font-weight:700; font-size:14px; box-shadow:0 3px 10px rgba(0,0,0,.3); cursor:pointer;}
   #searchPanel{position:fixed; left:0; right:0; bottom:0; z-index:70; display:none; background:var(--card); border-top:2px solid var(--court); box-shadow:0 -4px 14px rgba(0,0,0,.25); padding:10px 12px; max-height:65vh; overflow-y:auto;}
   #searchPanel .sp-head{display:flex; gap:6px; align-items:center; margin-bottom:8px; position:sticky; top:-10px; background:var(--card); padding:2px 0 6px;}
-  #searchInput{flex:1; min-width:100px; text-align:right; font-size:15px; padding:9px 12px;}
+  #searchInput{flex:1; min-width:100px; text-align:right; font-size:16px; padding:9px 12px;}
+  input[type=number], input[type=text], textarea, select{font-size:16px;}
+  html, body{overflow-x:hidden;}
+  #searchPanel{max-width:100vw;}
   button.ghost.on{background:var(--vodafone); color:#fff; border-color:var(--vodafone);}
 
   /* dark mode */
@@ -1155,6 +1158,10 @@ function updateSearchFab(){
 
 function toggleSearchPanel(){
   searchOpen = !searchOpen;
+  if(!searchOpen){
+    document.getElementById('searchInput').value = '';
+    spUnpaid = false;
+  }
   document.getElementById('searchPanel').style.display = searchOpen ? 'block' : 'none';
   updateSearchFab();
   if(searchOpen){
@@ -1561,13 +1568,13 @@ function renderGroups(){
       const winner = getResolvedWinner(g, mi);
       return `
         <div class="match-row ${hlClass(r.a, r.b)}">
-          <button class="team-btn ${winner===r.a?'winner':''}" onclick="setManualWinner(${gi},${mi},'a')">${r.a}${lateBadge(r.a)}${findBtn(r.a)}</button>
+          <button class="team-btn ${winner===r.a?'winner':''}" onclick="setManualWinner(${gi},${mi},'a')">${r.a}${lateBadge(r.a)}</button>
           <div class="score-inputs">
             ${scoreSelect(m.scoreA, `setScore(${gi},${mi},'a',this.value)`)}
             <span>:</span>
             ${scoreSelect(m.scoreB, `setScore(${gi},${mi},'b',this.value)`)}
           </div>
-          <button class="team-btn ${winner===r.b?'winner':''}" onclick="setManualWinner(${gi},${mi},'b')">${r.b}${lateBadge(r.b)}${findBtn(r.b)}</button>
+          <button class="team-btn ${winner===r.b?'winner':''}" onclick="setManualWinner(${gi},${mi},'b')">${r.b}${lateBadge(r.b)}</button>
         </div>
       `;
     }).join('');
@@ -2013,13 +2020,13 @@ function renderRRRoundsHtml(rr, interactive){
         return `
           <div class="match-row ${hlClass(m.a, m.b)}">
             <div style="font-size:10px;color:var(--mut1);min-width:44px;">ملعب ${m.court}</div>
-            <button class="team-btn ${winner===m.a?'winner':''}" onclick="setRRWinner(${mi},'a')">${m.a}${findBtn(m.a)}</button>
+            <button class="team-btn ${winner===m.a?'winner':''}" onclick="setRRWinner(${mi},'a')">${m.a}</button>
             <div class="score-inputs">
               ${scoreSelect(m.scoreA, `setRRScore(${mi},'a',this.value)`)}
               <span>:</span>
               ${scoreSelect(m.scoreB, `setRRScore(${mi},'b',this.value)`)}
             </div>
-            <button class="team-btn ${winner===m.b?'winner':''}" onclick="setRRWinner(${mi},'b')">${m.b}${findBtn(m.b)}</button>
+            <button class="team-btn ${winner===m.b?'winner':''}" onclick="setRRWinner(${mi},'b')">${m.b}</button>
           </div>
         `;
       }
@@ -2261,7 +2268,7 @@ function renderKnockout(){
         return `
           <div style="flex:1;min-width:70px;">
             <div style="font-size:10px;color:var(--mut1);text-align:center;margin-bottom:2px;">${side==='a'?labelA:labelB}${confirmed?' (مؤكد يدوي)':''}</div>
-            <button class="team-btn ${knockoutPairWinner(groups,m)===resolvedName?'winner':''}" onclick="setKnockoutWinner(${i},'${side}')">${resolvedName}${findBtn(resolvedName)}</button>
+            <button class="team-btn ${knockoutPairWinner(groups,m)===resolvedName?'winner':''}" onclick="setKnockoutWinner(${i},'${side}')">${resolvedName}</button>
             ${confirmed ? `<div style="text-align:center;"><button class="ghost" style="font-size:10px;padding:2px 8px;margin-top:2px;" onclick="unconfirmQualifier(${i},'${side}')">إلغاء التأكيد</button></div>` : ''}
           </div>
         `;
@@ -2602,13 +2609,13 @@ function renderMatchRowGeneric(m, onWinnerA, onWinnerB, onScoreA, onScoreB){
   const winner = getMatchWinner(m);
   return `
     <div class="match-row ${hlClass(m.a, m.b)}">
-      <button class="team-btn ${winner===m.a?'winner':''}" onclick="${onWinnerA}">${m.a}${findBtn(m.a)}</button>
+      <button class="team-btn ${winner===m.a?'winner':''}" onclick="${onWinnerA}">${m.a}</button>
       <div class="score-inputs">
         ${scoreSelect(m.scoreA, `${onScoreA}`)}
         <span>:</span>
         ${scoreSelect(m.scoreB, `${onScoreB}`)}
       </div>
-      <button class="team-btn ${winner===m.b?'winner':''}" onclick="${onWinnerB}">${m.b}${findBtn(m.b)}</button>
+      <button class="team-btn ${winner===m.b?'winner':''}" onclick="${onWinnerB}">${m.b}</button>
     </div>
   `;
 }
