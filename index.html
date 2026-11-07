@@ -433,6 +433,12 @@
   }
   input[type=number], input[type=text], textarea{background:var(--card); color:var(--text);}
   #themeBtn{position:absolute; left:16px; top:52px; z-index:2; background:rgba(244,239,230,0.15); color:var(--line); border:none; border-radius:20px; padding:4px 12px; font-size:13px; font-family:'Cairo',sans-serif; cursor:pointer;}
+  .history-tag.groups{background:var(--instapay);}
+  .history-tag.roundrobin{background:var(--zizo);}
+  .wz-q{font-size:15px; font-weight:700; color:var(--head); margin-bottom:4px;}
+  .wz-step{font-size:11.5px; color:var(--mut1); margin-bottom:8px;}
+  .wz-choices{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  .wz-choices button{flex:1; min-width:130px;}
 </style>
 </head>
 <body>
@@ -447,14 +453,8 @@
 <div class="wrap">
 
   <div class="card" id="typeCard">
-    <h2>0. نوع البطولة</h2>
-    <div class="type-select">
-      <button class="type-btn" id="btnLowd" onclick="setType('lowd')">بطولة Low D (الأربع)</button>
-      <button class="type-btn" id="btnBeginners" onclick="setType('beginners')">بطولة Beginners (الاتنين)</button>
-      <button class="type-btn" id="btnSunday" onclick="setType('sunday')">دورة الأحد</button>
-      <button class="type-btn" id="btnThursday" onclick="setType('thursday')">بطولة الخميس</button>
-    </div>
-    <div class="type-note" id="typeNote">اختار نوع البطولة الأول</div>
+    <h2>0. البروفايل</h2>
+    <div id="profileBox"></div>
   </div>
 
   <div class="card" id="pasteCard">
@@ -462,6 +462,7 @@
     <textarea id="teamsInput" placeholder="1- تيم حامد ودرباله
 2- تيم عبدالله ورضا
 3- تيم جعفر وعمر"></textarea>
+    <div id="teamsHint" style="font-size:12.5px; margin-top:6px; color:var(--mut2);"></div>
     <div class="row-inline">
       <label>سعر الاشتراك للفرد</label>
       <input type="number" id="priceInput" value="130">
@@ -507,23 +508,15 @@
   <div class="card" id="groupsCard">
     <h2>4. <span id="matchesCardTitle">المجموعات والمباريات</span></h2>
 
-    <div id="thursdayChoiceSection" style="display:none;">
-      <div style="font-size:13px;color:var(--mut2);margin-bottom:8px;">هتدخل التصنيفات وأنا أكوّن المجموعتين، ولا هتحط المجموعات جاهزة بنفسك؟</div>
-      <div class="row-inline" style="margin-top:0;">
-        <button class="primary" onclick="setThursdayMode('tiers')">تصنيفات</button>
-        <button class="primary" onclick="setThursdayMode('groups')">مجموعات جاهزة</button>
-      </div>
-    </div>
-
     <div id="tiersSection" style="display:none;">
       <div class="row-inline" style="margin-top:0;">
         <button class="ghost" onclick="loadTeamsForTiers()">تحميل الفرق من بوكس اللاعبين</button>
-        <button class="ghost" onclick="setThursdayMode(null)">🔄 رجوع</button>
       </div>
       <div id="tiersOutput" style="margin-top:10px;"></div>
     </div>
 
     <div id="groupsSection">
+      <div id="groupsManualInput">
       <div class="row-inline" style="margin-top:0;">
         <label for="groupImageInput" class="primary" style="display:inline-block; cursor:pointer;">📷 ارفع صور المجموعات</label>
         <input type="file" id="groupImageInput" accept="image/*" multiple style="display:none;" onchange="handleGroupImages(this.files)">
@@ -540,6 +533,7 @@
       <div class="row-inline">
         <button class="primary" onclick="parseGroups()">استخرج المجموعات والماتشات</button>
         <button class="ghost" onclick="resetGroups()">مسح المجموعات</button>
+      </div>
       </div>
       <div id="groupsOutput" style="margin-top:14px;"></div>
     </div>
@@ -608,8 +602,8 @@
 
 <script>
 
-let currentType = null; // 'lowd' | 'beginners' | 'sunday' | 'thursday' | null
-let thursdayMode = null; // 'tiers' | 'groups' | null
+let profile = null; // {name, teams, format:'groups'|'roundrobin', groupsBy:'manual'|'auto'|null, price, qualifiers}
+let wizard = null; // profile questions in progress (not saved)
 let thursdayTeams = [];
 let thursdayTierAssignments = {}; // teamName -> 'A1'|'A2'|...
 let players = []; // {name, status: null|'cash'|'instapay'|'vodafone'|'zizo'|'makram'}
@@ -725,8 +719,7 @@ function setBadge(text){
 function saveState(){
   try{
     const data = {
-      currentType: currentType,
-      thursdayMode: thursdayMode,
+      profile: profile,
       thursdayTeams: thursdayTeams,
       thursdayTierAssignments: thursdayTierAssignments,
       teamsInput: document.getElementById('teamsInput').value,
@@ -779,8 +772,7 @@ function loadState(){
     }
     if(raw){
       const data = JSON.parse(raw);
-      currentType = data.currentType || null;
-      thursdayMode = data.thursdayMode || null;
+      profile = data.profile || migrateOldType(data.currentType, data.thursdayMode, data.price);
       thursdayTeams = data.thursdayTeams || [];
       thursdayTierAssignments = data.thursdayTierAssignments || {};
       document.getElementById('teamsInput').value = data.teamsInput || '';
@@ -796,6 +788,7 @@ function loadState(){
       history = data.history || [];
 
       updateTypeUI();
+      renderProfileBox();
       renderTiersUI();
       if(players.length > 0){
         document.getElementById('playersCard').style.display = 'block';
@@ -814,6 +807,8 @@ function loadState(){
     } else {
       setBadge('بطولة جديدة');
       renderHistory();
+      updateTypeUI();
+      renderProfileBox();
     }
   }catch(e){
     console.error('Load error:', e);
@@ -851,58 +846,195 @@ window.addEventListener('DOMContentLoaded', applyThemeUI);
 
 
 /* ---------- Tournament type ---------- */
-function setType(t){
-  currentType = (currentType === t) ? null : t;
-  thursdayMode = null;
+function migrateOldType(t, tm, price){
+  const pr = parseFloat(price) || 130;
+  if(t==='lowd') return {name:'Low D', teams:12, format:'groups', groupsBy:'manual', price:pr, qualifiers:6};
+  if(t==='beginners') return {name:'Beginners', teams:12, format:'groups', groupsBy:'manual', price:pr, qualifiers:6};
+  if(t==='sunday') return {name:'دورة الأحد', teams:5, format:'roundrobin', groupsBy:null, price:pr, qualifiers:0};
+  if(t==='thursday') return {name:'بطولة الخميس', teams:8, format:'groups', groupsBy:(tm==='tiers'?'auto':'manual'), price:pr, qualifiers:4};
+  return null;
+}
+
+function makeProfileName(){
+  const days = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+  const now = new Date();
+  const base = `${days[now.getDay()]} ${now.getDate()}/${now.getMonth()+1}`;
+  const used = history.map(h=>h.label);
+  if(!used.includes(base)) return base;
+  let n = 2;
+  while(used.includes(`${base} (${n})`)) n++;
+  return `${base} (${n})`;
+}
+
+function updateTeamsHint(){
+  const el = document.getElementById('teamsHint');
+  if(!el) return;
+  if(!profile){ el.textContent = ''; return; }
+  const lines = document.getElementById('teamsInput').value.split('\n').map(l=>l.trim()).filter(Boolean);
+  const cnt = lines.map(extractTeamName).filter(Boolean).length;
+  el.textContent = `المطلوب ${profile.teams} فريق • مكتوب ${cnt}`;
+  el.style.color = (cnt === profile.teams) ? 'var(--cash)' : 'var(--mut2)';
+}
+
+function wizardSteps(d){
+  const st = ['teams','format'];
+  if(d.format==='groups') st.push('groupsBy');
+  st.push('price');
+  if(d.format==='groups') st.push('qualifiers');
+  return st;
+}
+
+function startWizard(editing){
+  const d = (editing && profile) ? {teams:profile.teams, format:profile.format, groupsBy:profile.groupsBy, price:profile.price, qualifiers:profile.qualifiers} : {teams:12, format:null, groupsBy:null, price:parseFloat(document.getElementById('priceInput').value)||130, qualifiers:null};
+  wizard = {step:0, editing:!!(editing && profile), data:d};
+  renderProfileBox();
+}
+
+function wizardHtml(){
+  const d = wizard.data;
+  const steps = wizardSteps(d);
+  const id = steps[wizard.step];
+  let q = '', body = '';
+  if(id==='teams'){
+    q = 'البطولة كام فريق؟';
+    body = `<div class="row-inline"><input type="number" id="wzInput" value="${d.teams||12}" min="2"><span style="font-size:13px;color:var(--mut2);">فريق</span></div>
+      <div class="row-inline">${[5,8,12,16].map(v=>`<button class="ghost" onclick="document.getElementById('wzInput').value=${v}">${v}</button>`).join('')}</div>`;
+  } else if(id==='format'){
+    q = 'نظام اللعب إيه؟';
+    body = `<div class="wz-choices">
+      <button class="primary" onclick="wizardPick('format','groups')">مجموعات</button>
+      <button class="primary" onclick="wizardPick('format','roundrobin')">كل فريق يلعب مع الكل</button></div>`;
+  } else if(id==='groupsBy'){
+    q = 'مين اللي بيعمل المجموعات؟';
+    body = `<div class="wz-choices">
+      <button class="primary" onclick="wizardPick('groupsBy','manual')">أنا بحطها</button>
+      <button class="primary" onclick="wizardPick('groupsBy','auto')">التطبيق يعملها بالتصنيفات</button></div>`;
+  } else if(id==='price'){
+    q = 'سعر الاشتراك للفرد كام؟';
+    body = `<div class="row-inline"><input type="number" id="wzInput" value="${d.price}" min="0"><span style="font-size:13px;color:var(--mut2);">جنيه</span></div>`;
+  } else if(id==='qualifiers'){
+    q = 'كام فريق بيصعد؟';
+    const def = d.qualifiers || Math.floor(d.teams/2);
+    body = `<div class="row-inline"><input type="number" id="wzInput" value="${def}" min="1"><span style="font-size:13px;color:var(--mut2);">فريق</span></div>`;
+  }
+  const isChoice = (id==='format' || id==='groupsBy');
+  const isLast = wizard.step === steps.length-1;
+  return `
+    <div class="wz-step">سؤال ${wizard.step+1}${isChoice?'':' من '+steps.length}</div>
+    <div class="wz-q">${q}</div>
+    ${body}
+    <div class="row-inline">
+      ${isChoice ? '' : `<button class="primary" onclick="wizardNext()">${isLast?'تم ✓':'التالي'}</button>`}
+      <button class="ghost" onclick="wizardBack()">${wizard.step===0?'إلغاء':'رجوع'}</button>
+    </div>`;
+}
+
+function wizardNext(){
+  const d = wizard.data;
+  const id = wizardSteps(d)[wizard.step];
+  const inp = document.getElementById('wzInput');
+  if(id==='teams'){
+    const v = parseInt(inp.value);
+    if(!v || v<2){ alert('اكتب عدد فرق صحيح (2 على الأقل)'); return; }
+    d.teams = v;
+  } else if(id==='price'){
+    const v = parseFloat(inp.value);
+    if(isNaN(v) || v<0){ alert('اكتب سعر صحيح'); return; }
+    d.price = v;
+  } else if(id==='qualifiers'){
+    const v = parseInt(inp.value);
+    if(!v || v<1 || v>d.teams){ alert('عدد الصاعدين لازم يكون من 1 لـ ' + d.teams); return; }
+    d.qualifiers = v;
+  }
+  advanceWizard();
+}
+
+function wizardPick(key, value){
+  wizard.data[key] = value;
+  if(key==='groupsBy' && value==='auto' && wizard.data.teams % 4 !== 0){
+    alert('عمل المجموعات بالتصنيفات محتاج عدد فرق يقبل القسمة على 4 (زي 8 أو 12 أو 16). ارجع غير عدد الفرق، أو اختار "أنا بحطها".');
+    wizard.data.groupsBy = null;
+    return;
+  }
+  advanceWizard();
+}
+
+function advanceWizard(){
+  const steps = wizardSteps(wizard.data);
+  if(wizard.step < steps.length-1){
+    wizard.step++;
+    renderProfileBox();
+  } else {
+    finishWizard();
+  }
+}
+
+function wizardBack(){
+  if(wizard.step === 0){ wizard = null; }
+  else { wizard.step--; }
+  renderProfileBox();
+}
+
+function finishWizard(){
+  const d = wizard.data;
+  const isGroups = d.format === 'groups';
+  profile = {
+    name: (wizard.editing && profile) ? profile.name : makeProfileName(),
+    teams: d.teams,
+    format: d.format,
+    groupsBy: isGroups ? d.groupsBy : null,
+    price: d.price,
+    qualifiers: isGroups ? (d.qualifiers || Math.floor(d.teams/2)) : 0
+  };
+  wizard = null;
+  document.getElementById('priceInput').value = profile.price;
+  renderProfileBox();
   updateTypeUI();
+  updateTeamsHint();
+  updateTotals();
   saveState();
+}
+
+function renderProfileBox(){
+  const box = document.getElementById('profileBox');
+  if(!box) return;
+  if(wizard){ box.innerHTML = wizardHtml(); return; }
+  if(!profile){
+    box.innerHTML = `<div class="empty-hint" style="padding:4px 0 12px;">مفيش بروفايل لسه - اعمل واحد جديد وجاوب على كام سؤال</div>
+      <button class="primary" onclick="startWizard(false)">＋ بروفايل جديد</button>`;
+    return;
+  }
+  const parts = [`${profile.teams} فريق`, profile.format==='groups' ? 'مجموعات' : 'كل فريق يلعب مع الكل'];
+  if(profile.format==='groups'){
+    parts.push(profile.groupsBy==='auto' ? 'المجموعات بالتصنيفات' : 'المجموعات يدوي');
+    parts.push(`يصعد ${profile.qualifiers}`);
+  }
+  parts.push(`${profile.price} جنيه`);
+  box.innerHTML = `
+    <div style="font-weight:900; font-size:17px; color:var(--head);">${profile.name}</div>
+    <div class="type-note" style="text-align:right;">${parts.join(' • ')}</div>
+    <div class="row-inline">
+      <button class="ghost" onclick="startWizard(true)">✏️ تعديل الأسئلة</button>
+      <button class="ghost" onclick="newProfileFlow()">＋ بروفايل جديد</button>
+    </div>`;
+}
+
+function newProfileFlow(){
+  if(startNewTournament()) startWizard(false);
 }
 
 function updateTypeUI(){
-  const btnLowd = document.getElementById('btnLowd');
-  const btnBeginners = document.getElementById('btnBeginners');
-  const btnSunday = document.getElementById('btnSunday');
-  const btnThursday = document.getElementById('btnThursday');
-  btnLowd.classList.remove('active-lowd');
-  btnBeginners.classList.remove('active-beginners');
-  btnSunday.classList.remove('active-sunday');
-  btnThursday.classList.remove('active-thursday');
-  const note = document.getElementById('typeNote');
-  if(currentType === 'lowd'){
-    btnLowd.classList.add('active-lowd');
-    note.textContent = 'هيتم حساب آخر مركزين في كل مجموعة لمتابعة النزول لـ Beginners';
-  } else if(currentType === 'beginners'){
-    btnBeginners.classList.add('active-beginners');
-    note.textContent = 'بطولة Beginners - من غير متابعة نزول';
-  } else if(currentType === 'sunday'){
-    btnSunday.classList.add('active-sunday');
-    note.textContent = 'دورة الأحد - كل الفرق بتواجه بعض، من غير مجموعات';
-  } else if(currentType === 'thursday'){
-    btnThursday.classList.add('active-thursday');
-    note.textContent = 'بطولة الخميس - 8 فرق، مجموعتين';
-  } else {
-    note.textContent = 'اختار نوع البطولة الأول';
-  }
-
-  const isSunday = currentType === 'sunday';
-  const isThursday = currentType === 'thursday';
-
-  document.getElementById('roundRobinSection').style.display = isSunday ? 'block' : 'none';
-  document.getElementById('thursdayChoiceSection').style.display = (isThursday && !thursdayMode) ? 'block' : 'none';
-  document.getElementById('tiersSection').style.display = (isThursday && thursdayMode==='tiers') ? 'block' : 'none';
-  const showGroupsSection = (!isSunday && !isThursday) || (isThursday && thursdayMode==='groups');
-  document.getElementById('groupsSection').style.display = showGroupsSection ? 'block' : 'none';
-
-  document.getElementById('matchesCardTitle').textContent = isSunday ? 'الدورة - المباريات' : 'المجموعات والمباريات';
-  document.getElementById('knockoutCard').style.display = isSunday ? 'none' : 'block';
-  document.getElementById('semifinalCard').style.display = isSunday ? 'none' : 'block';
+  const isRR = !!profile && profile.format === 'roundrobin';
+  const auto = !!profile && profile.format === 'groups' && profile.groupsBy === 'auto';
+  document.getElementById('roundRobinSection').style.display = isRR ? 'block' : 'none';
+  document.getElementById('tiersSection').style.display = auto ? 'block' : 'none';
+  document.getElementById('groupsSection').style.display = isRR ? 'none' : 'block';
+  document.getElementById('groupsManualInput').style.display = auto ? 'none' : 'block';
+  document.getElementById('matchesCardTitle').textContent = isRR ? 'الدورة - المباريات' : 'المجموعات والمباريات';
+  document.getElementById('knockoutCard').style.display = isRR ? 'none' : 'block';
+  document.getElementById('semifinalCard').style.display = isRR ? 'none' : 'block';
 }
 
-function setThursdayMode(mode){
-  thursdayMode = mode;
-  updateTypeUI();
-  saveState();
-}
 
 function extractTeamName(line){
   let stripped = line.trim().replace(/^\s*\d+\s*[-.)،]?\s*/,'').trim();
@@ -924,8 +1056,9 @@ function loadTeamsForTiers(){
   const raw = document.getElementById('teamsInput').value;
   const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
   const teamNames = lines.map(extractTeamName).filter(Boolean);
-  if(teamNames.length !== 8){
-    alert(`لازم يكون فيه 8 فرق بالظبط في بوكس "ليستة التيمات" فوق (لقيت ${teamNames.length}). حط الفرق هناك الأول.`);
+  const need = profile ? profile.teams : 8;
+  if(teamNames.length !== need){
+    alert(`لازم يكون فيه ${need} فريق بالظبط في بوكس "ليستة التيمات" فوق (لقيت ${teamNames.length}). حط الفرق هناك الأول.`);
     return;
   }
   thursdayTeams = teamNames;
@@ -934,13 +1067,21 @@ function loadTeamsForTiers(){
   saveState();
 }
 
+function tierSlotsFor(n){
+  const G = Math.floor(n/4);
+  const slots = [];
+  ['A','B','C','D'].forEach(t=>{ for(let k=1;k<=G;k++) slots.push(t+k); });
+  return slots;
+}
+
+
 function renderTiersUI(){
   const out = document.getElementById('tiersOutput');
   if(thursdayTeams.length === 0){
     out.innerHTML = '';
     return;
   }
-  const tierSlots = ['A1','A2','B1','B2','C1','C2','D1','D2'];
+  const tierSlots = tierSlotsFor(thursdayTeams.length);
   const usedSlots = Object.values(thursdayTierAssignments);
   const rows = thursdayTeams.map(team=>{
     const current = thursdayTierAssignments[team] || '';
@@ -988,30 +1129,27 @@ function resetThursdayTiers(){
 }
 
 function generateThursdayGroups(){
-  const tierSlots = ['A1','A2','B1','B2','C1','C2','D1','D2'];
+  const n = thursdayTeams.length;
+  const slots = tierSlotsFor(n);
   const assigned = Object.values(thursdayTierAssignments);
-  if(assigned.length !== 8 || new Set(assigned).size !== 8){
-    alert('لازم كل التصنيفات التمنية (A1,A2,B1,B2,C1,C2,D1,D2) تتحدد لفرق مختلفة الأول');
+  if(n < 4 || n % 4 !== 0 || assigned.length !== n || new Set(assigned).size !== n){
+    alert(`لازم كل التصنيفات (${slots.join(', ')}) تتحدد لفرق مختلفة الأول`);
     return;
   }
+  if(groups.length > 0 && !confirm('هيعمل مجموعات جديدة ويمسح المجموعات والنتايج الحالية، متأكد؟')) return;
+  const G = n/4;
   const slotToTeam = {};
   Object.keys(thursdayTierAssignments).forEach(team=>{
     slotToTeam[thursdayTierAssignments[team]] = team;
   });
 
-  const tiers = ['A','B','C','D'];
-  const group1 = [], group2 = [];
-  tiers.forEach(t=>{
-    const opt1 = slotToTeam[t+'1'];
-    const opt2 = slotToTeam[t+'2'];
-    if(Math.random() < 0.5){ group1.push(opt1); group2.push(opt2); }
-    else { group1.push(opt2); group2.push(opt1); }
+  const groupTeams = Array.from({length:G}, ()=>[]);
+  ['A','B','C','D'].forEach(t=>{
+    const tierTeams = shuffleArray(Array.from({length:G}, (_,k)=>slotToTeam[t+(k+1)]));
+    tierTeams.forEach((team, gi)=> groupTeams[gi].push(team));
   });
 
-  const newGroups = [
-    {name:'مجموعة 1', teams: shuffleArray(group1)},
-    {name:'مجموعة 2', teams: shuffleArray(group2)}
-  ];
+  const newGroups = groupTeams.map((ts, gi)=>({name:`مجموعة ${gi+1}`, teams: shuffleArray(ts)}));
   newGroups.forEach(g=>{
     g.matches = [];
     const order = shuffleArray([0,1,2,3]);
@@ -1027,11 +1165,16 @@ function generateThursdayGroups(){
   });
 
   groups = newGroups;
+  knockout = null;
+  semifinal = null;
   document.getElementById('groupsInput').value = newGroups.map(g=>`${g.name}\n${g.teams.map(t=>'تيم '+t).join('\n')}`).join('\n\n');
   renderGroups();
+  renderKnockout();
+  renderSemiFinal();
   saveState();
-  alert('اتكونت المجموعتين ✓ انزل تحت شوية تلاقي المجموعات والماتشات جاهزة');
+  alert('اتكونت المجموعات ✓ انزل تحت شوية تلاقي المجموعات والماتشات جاهزة');
 }
+
 
 /* ---------- Teams / players ---------- */
 function parseTeams(){
@@ -1307,6 +1450,7 @@ document.getElementById('priceInput').addEventListener('input', ()=>{
 });
 
 document.getElementById('teamsInput').addEventListener('input', saveState);
+document.getElementById('teamsInput').addEventListener('input', updateTeamsHint);
 
 function resetAll(){
   if(!confirm('هيمسح كل بيانات اللاعبين والدفع الحالية، متأكد؟')) return;
@@ -2342,19 +2486,19 @@ function renderKnockout(){
 
 /* ---------- Archive ---------- */
 function saveTournament(){
-  if(!currentType){
-    alert('اختار نوع البطولة الأول قبل الحفظ');
+  if(!profile){
+    alert('اعمل بروفايل الأول قبل الحفظ');
     return;
   }
   if(players.length === 0 && groups.length === 0 && !roundRobin){
     alert('مفيش بيانات لحفظها لسه');
     return;
   }
-  const defaultLabel = new Date().toLocaleDateString('ar-EG');
+  const defaultLabel = profile.name;
   const label = prompt('اسم/تاريخ للبطولة دي (اختياري)', defaultLabel) || defaultLabel;
   const entry = {
     id: Date.now().toString(),
-    type: currentType,
+    type: profile.format,
     date: new Date().toISOString(),
     label: label,
     groupsInput: document.getElementById('groupsInput').value,
@@ -2370,16 +2514,16 @@ function saveTournament(){
 }
 
 function startNewTournament(){
-  if(!confirm('هيمسح شاشة العمل الحالية (البطولات المحفوظة هتفضل زي ماهي في الأرشيف)، متأكد؟')) return;
+  if(!confirm('هيمسح شاشة العمل الحالية (البطولات المحفوظة هتفضل زي ماهي في الأرشيف)، متأكد؟')) return false;
   players = [];
   groups = [];
   knockout = null;
   semifinal = null;
   roundRobin = null;
-  currentType = null;
+  profile = null;
+  wizard = null;
   highlightTeam = null;
   updateHighlightBar();
-  thursdayMode = null;
   thursdayTeams = [];
   thursdayTierAssignments = {};
   document.getElementById('teamsInput').value = '';
@@ -2394,7 +2538,10 @@ function startNewTournament(){
   document.getElementById('roundRobinOutput').innerHTML = '';
   document.getElementById('tiersOutput').innerHTML = '';
   updateTypeUI();
+  renderProfileBox();
+  updateTeamsHint();
   saveState();
+  return true;
 }
 
 function exportBackup(){
@@ -2451,9 +2598,10 @@ function renderHistory(){
     return;
   }
   list.innerHTML = history.map(h=>{
-    const typeLabel = h.type==='lowd' ? 'Low D' : (h.type==='beginners' ? 'Beginners' : (h.type==='thursday' ? 'بطولة الخميس' : 'دورة الأحد'));
+    const isRR = (h.type==='sunday' || h.type==='roundrobin');
+    const typeLabel = ({lowd:'Low D', beginners:'Beginners', thursday:'بطولة الخميس', sunday:'دورة الأحد', groups:'مجموعات', roundrobin:'الكل ضد الكل'})[h.type] || 'بطولة';
 
-    const groupsHtml = (h.type !== 'sunday') ? (h.groups||[]).map(g=>{
+    const groupsHtml = (!isRR) ? (h.groups||[]).map(g=>{
       const matchesText = g.matches.map((m,mi)=>{
         const r = resolveMatchTeams(g, mi);
         if(!r) return `<div style="font-size:12px;color:var(--mut1);padding:2px 0;">ماتش ${mi+1}: متلعبش</div>`;
@@ -2473,7 +2621,7 @@ function renderHistory(){
         </table>`;
     }).join('') : '';
 
-    const knockoutHtml = (h.type !== 'sunday' && h.knockout && h.knockout.pairs && h.knockout.pairs.length) ? `
+    const knockoutHtml = (!isRR && h.knockout && h.knockout.pairs && h.knockout.pairs.length) ? `
       <h3 style="font-size:13px;margin:10px 0 4px;">قرعة الدور الوسيط</h3>
       ${h.knockout.pairs.map(m=>{
         const r = knockoutPairResolved(h.groups||[], m);
@@ -2485,7 +2633,7 @@ function renderHistory(){
     ` : '';
 
     let championHtml = '';
-    if(h.type !== 'sunday' && h.semifinal && h.semifinal.final){
+    if(!isRR && h.semifinal && h.semifinal.final){
       const fm = h.semifinal.final;
       const champion = getMatchWinner(fm);
       if(champion){
@@ -2502,7 +2650,7 @@ function renderHistory(){
       }
     }
 
-    const sundayHtml = (h.type === 'sunday' && h.roundRobin) ? renderRRHistoryBlock(h.roundRobin) : '';
+    const sundayHtml = (isRR && h.roundRobin) ? renderRRHistoryBlock(h.roundRobin) : '';
 
     return `
       <div class="history-item">
@@ -2516,7 +2664,7 @@ function renderHistory(){
           </div>
         </div>
         <div class="history-detail" id="hd-${h.id}">
-          ${groupsHtml || (h.type!=='sunday' ? '<div class="empty-hint">مفيش مجموعات محفوظة في البطولة دي</div>' : '')}
+          ${groupsHtml || (!isRR ? '<div class="empty-hint">مفيش مجموعات محفوظة في البطولة دي</div>' : '')}
           ${knockoutHtml}
           ${championHtml}
           ${sundayHtml}
