@@ -553,7 +553,7 @@
   </div>
 
   <div class="card" id="knockoutCard">
-    <h2>5. قرعة الدور الوسيط (الأول ضد التاني)</h2>
+    <h2 id="knockoutTitle">5. قرعة الدور الوسيط (الأول ضد التاني)</h2>
     <div class="row-inline">
       <button class="primary" onclick="generateKnockout()">🎲 اعمل القرعة</button>
       <button class="ghost" onclick="renderKnockout()">🔄 حدّث الأسامي</button>
@@ -565,7 +565,7 @@
   <div class="card" id="semifinalCard">
     <h2>6. الدور قبل النهائي والنهائي</h2>
     <div class="row-inline">
-      <button class="primary" onclick="generateSemiFinal()">تحديد الصاعد مباشرة للنهائي</button>
+      <button class="primary" onclick="generateSemiFinal()">تكوين الدور اللي بعده</button>
       <button class="ghost" onclick="clearSemiFinal()">مسح</button>
     </div>
     <div id="semifinalOutput" style="margin-top:14px;"></div>
@@ -575,7 +575,7 @@
     <h2>7. أرشيف البطولات</h2>
     <div class="row-inline">
       <button class="primary" onclick="saveTournament()">💾 حفظ البطولة الحالية</button>
-      <button class="ghost" onclick="startNewTournament()">بطولة جديدة</button>
+      <button class="ghost" onclick="newProfileFlow()">＋ بروفايل جديد</button>
     </div>
     <div class="row-inline">
       <button class="ghost" onclick="exportBackup()">⬇️ تصدير نسخة احتياطية</button>
@@ -604,6 +604,7 @@
 
 let profile = null; // {name, teams, format:'groups'|'roundrobin', groupsBy:'manual'|'auto'|null, price, qualifiers}
 let wizard = null; // profile questions in progress (not saved)
+let savedProfiles = []; // other profiles, each {id, profile, data} with its full working state
 let thursdayTeams = [];
 let thursdayTierAssignments = {}; // teamName -> 'A1'|'A2'|...
 let players = []; // {name, status: null|'cash'|'instapay'|'vodafone'|'zizo'|'makram'}
@@ -720,6 +721,7 @@ function saveState(){
   try{
     const data = {
       profile: profile,
+      savedProfiles: savedProfiles,
       thursdayTeams: thursdayTeams,
       thursdayTierAssignments: thursdayTierAssignments,
       teamsInput: document.getElementById('teamsInput').value,
@@ -773,6 +775,8 @@ function loadState(){
     if(raw){
       const data = JSON.parse(raw);
       profile = data.profile || migrateOldType(data.currentType, data.thursdayMode, data.price);
+      if(profile && !profile.id) profile.id = newProfileId();
+      savedProfiles = (data.savedProfiles || []).filter(x=>x && x.id && x.profile && x.data);
       thursdayTeams = data.thursdayTeams || [];
       thursdayTierAssignments = data.thursdayTierAssignments || {};
       document.getElementById('teamsInput').value = data.teamsInput || '';
@@ -859,7 +863,8 @@ function makeProfileName(){
   const days = ['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
   const now = new Date();
   const base = `${days[now.getDay()]} ${now.getDate()}/${now.getMonth()+1}`;
-  const used = history.map(h=>h.label);
+  const used = history.map(h=>h.label).concat(savedProfiles.map(x=>x.profile.name));
+  if(profile) used.push(profile.name);
   if(!used.includes(base)) return base;
   let n = 2;
   while(used.includes(`${base} (${n})`)) n++;
@@ -975,11 +980,148 @@ function wizardBack(){
   renderProfileBox();
 }
 
+function newProfileId(){
+  return Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+}
+
+function hasWorkingData(){
+  return players.length>0 || groups.length>0 || !!roundRobin || thursdayTeams.length>0;
+}
+
+function snapshotWorking(){
+  return JSON.parse(JSON.stringify({
+    teamsInput: document.getElementById('teamsInput').value,
+    price: document.getElementById('priceInput').value,
+    players: players,
+    groupsInput: document.getElementById('groupsInput').value,
+    groups: groups,
+    knockout: knockout,
+    semifinal: semifinal,
+    roundRobinInput: document.getElementById('roundRobinInput').value,
+    roundRobin: roundRobin,
+    thursdayTeams: thursdayTeams,
+    thursdayTierAssignments: thursdayTierAssignments
+  }));
+}
+
+function stashCurrent(){
+  if(!profile) return;
+  savedProfiles = savedProfiles.filter(x=>x.id!==profile.id);
+  savedProfiles.unshift({id:profile.id, profile:profile, data:snapshotWorking()});
+}
+
+function clearWorking(){
+  players = [];
+  groups = [];
+  knockout = null;
+  semifinal = null;
+  roundRobin = null;
+  thursdayTeams = [];
+  thursdayTierAssignments = {};
+  highlightTeam = null;
+  editingPairingGroupIndex = null;
+  editingPairingSelected = [];
+  editingLateGroupIndex = null;
+  updateHighlightBar();
+  document.getElementById('teamsInput').value = '';
+  document.getElementById('groupsInput').value = '';
+  document.getElementById('roundRobinInput').value = '';
+  document.getElementById('playersCard').style.display = 'none';
+  document.getElementById('totalsCard').style.display = 'none';
+  document.getElementById('groupsOutput').innerHTML = '';
+  document.getElementById('knockoutOutput').innerHTML = '';
+  document.getElementById('semifinalOutput').innerHTML = '';
+  document.getElementById('roundRobinOutput').innerHTML = '';
+  document.getElementById('tiersOutput').innerHTML = '';
+  updateSearchFab();
+}
+
+function applyWorking(d){
+  document.getElementById('teamsInput').value = d.teamsInput || '';
+  document.getElementById('priceInput').value = d.price || (profile ? profile.price : 130);
+  players = (d.players || []).map(p=>migratePlayer(p, 130));
+  document.getElementById('groupsInput').value = d.groupsInput || '';
+  groups = d.groups || [];
+  knockout = d.knockout || null;
+  semifinal = d.semifinal || null;
+  document.getElementById('roundRobinInput').value = d.roundRobinInput || '';
+  roundRobin = d.roundRobin || null;
+  thursdayTeams = d.thursdayTeams || [];
+  thursdayTierAssignments = d.thursdayTierAssignments || {};
+  const has = players.length > 0;
+  document.getElementById('playersCard').style.display = has ? 'block' : 'none';
+  document.getElementById('totalsCard').style.display = has ? 'block' : 'none';
+  renderPlayers();
+  updateTotals();
+  renderTiersUI();
+  renderGroups();
+  renderKnockout();
+  renderSemiFinal();
+  renderRoundRobin();
+}
+
+function refreshAfterProfileChange(){
+  wizard = null;
+  updateTypeUI();
+  renderProfileBox();
+  updateTeamsHint();
+  saveState();
+}
+
+function switchProfile(id){
+  const target = savedProfiles.find(x=>x.id===id);
+  if(!target) return;
+  if(!profile && hasWorkingData()){
+    if(!confirm('الشغل الحالي مش تابع لأي بروفايل، وهيتمسح لو فتحت بروفايل تاني. متأكد؟')) return;
+  }
+  savedProfiles = savedProfiles.filter(x=>x.id!==id);
+  stashCurrent();
+  clearWorking();
+  profile = target.profile;
+  applyWorking(target.data);
+  refreshAfterProfileChange();
+}
+
+function deleteProfile(id){
+  const isActive = !!profile && profile.id===id;
+  const entry = isActive ? {profile:profile} : savedProfiles.find(x=>x.id===id);
+  if(!entry) return;
+  if(!confirm(`هتمسح بروفايل "${entry.profile.name}" بكل بياناته (اللاعبين والمجموعات والنتايج) نهائي. الأرشيف مش هيتأثر، فلو عاوز تحتفظ بالنتايج احفظها في الأرشيف الأول. متأكد؟`)) return;
+  if(isActive){
+    clearWorking();
+    profile = null;
+    if(savedProfiles.length){
+      const next = savedProfiles.shift();
+      profile = next.profile;
+      applyWorking(next.data);
+    }
+  } else {
+    savedProfiles = savedProfiles.filter(x=>x.id!==id);
+  }
+  refreshAfterProfileChange();
+}
+
+function renameProfile(){
+  if(!profile) return;
+  const n = prompt('اسم البروفايل:', profile.name);
+  if(!n || !n.trim() || n.trim()===profile.name) return;
+  profile.name = n.trim();
+  renderProfileBox();
+  saveState();
+}
+
 function finishWizard(){
   const d = wizard.data;
   const isGroups = d.format === 'groups';
+  const editing = wizard.editing && !!profile;
+  if(!editing && profile){
+    // a new profile: keep the current one exactly as it is, and start with a clean screen
+    stashCurrent();
+    clearWorking();
+  }
   profile = {
-    name: (wizard.editing && profile) ? profile.name : makeProfileName(),
+    id: editing ? profile.id : newProfileId(),
+    name: editing ? profile.name : makeProfileName(),
     teams: d.teams,
     format: d.format,
     groupsBy: isGroups ? d.groupsBy : null,
@@ -995,33 +1137,58 @@ function finishWizard(){
   saveState();
 }
 
+
+function profileSummary(p){
+  const parts = [`${p.teams} فريق`, p.format==='groups' ? 'مجموعات' : 'كل فريق يلعب مع الكل'];
+  if(p.format==='groups'){
+    parts.push(p.groupsBy==='auto' ? 'المجموعات بالتصنيفات' : 'المجموعات يدوي');
+    parts.push(`يصعد ${p.qualifiers}`);
+  }
+  parts.push(`${p.price} جنيه`);
+  return parts.join(' • ');
+}
+
 function renderProfileBox(){
   const box = document.getElementById('profileBox');
   if(!box) return;
   if(wizard){ box.innerHTML = wizardHtml(); return; }
+  let html = '';
   if(!profile){
-    box.innerHTML = `<div class="empty-hint" style="padding:4px 0 12px;">مفيش بروفايل لسه - اعمل واحد جديد وجاوب على كام سؤال</div>
+    html += `<div class="empty-hint" style="padding:4px 0 12px;">مفيش بروفايل شغال - اعمل واحد جديد وجاوب على كام سؤال</div>
       <button class="primary" onclick="startWizard(false)">＋ بروفايل جديد</button>`;
-    return;
+  } else {
+    html += `
+      <div style="font-weight:900; font-size:17px; color:var(--head);">${profile.name} <span style="font-size:11px;font-weight:600;color:var(--cash);">• شغال دلوقتي</span></div>
+      <div class="type-note" style="text-align:right;">${profileSummary(profile)}</div>
+      <div class="row-inline">
+        <button class="ghost" onclick="renameProfile()">✏️ الاسم</button>
+        <button class="ghost" onclick="startWizard(true)">⚙️ تعديل الأسئلة</button>
+        <button class="primary" onclick="startWizard(false)">＋ بروفايل جديد</button>
+        <button class="ghost" onclick="deleteProfile('${profile.id}')">🗑 مسح البروفايل</button>
+      </div>`;
   }
-  const parts = [`${profile.teams} فريق`, profile.format==='groups' ? 'مجموعات' : 'كل فريق يلعب مع الكل'];
-  if(profile.format==='groups'){
-    parts.push(profile.groupsBy==='auto' ? 'المجموعات بالتصنيفات' : 'المجموعات يدوي');
-    parts.push(`يصعد ${profile.qualifiers}`);
+  if(savedProfiles.length){
+    html += `<div style="font-size:13px;font-weight:700;color:var(--head);margin:14px 0 6px;">بروفايلات تانية محفوظة بكل تفاصيلها:</div>` +
+      savedProfiles.map(x=>`
+        <div class="player-row" style="margin-bottom:6px;">
+          <div style="min-width:0;">
+            <div style="font-weight:700;font-size:14px;">${x.profile.name}</div>
+            <div style="font-size:11.5px;color:var(--mut2);">${profileSummary(x.profile)}</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="primary" style="padding:6px 14px;font-size:13px;" onclick="switchProfile('${x.id}')">فتح</button>
+            <button class="ghost" style="padding:6px 10px;" onclick="deleteProfile('${x.id}')">🗑</button>
+          </div>
+        </div>`).join('');
   }
-  parts.push(`${profile.price} جنيه`);
-  box.innerHTML = `
-    <div style="font-weight:900; font-size:17px; color:var(--head);">${profile.name}</div>
-    <div class="type-note" style="text-align:right;">${parts.join(' • ')}</div>
-    <div class="row-inline">
-      <button class="ghost" onclick="startWizard(true)">✏️ تعديل الأسئلة</button>
-      <button class="ghost" onclick="newProfileFlow()">＋ بروفايل جديد</button>
-    </div>`;
+  box.innerHTML = html;
 }
 
+
 function newProfileFlow(){
-  if(startNewTournament()) startWizard(false);
+  startWizard(false);
 }
+
 
 function updateTypeUI(){
   const isRR = !!profile && profile.format === 'roundrobin';
@@ -1892,6 +2059,21 @@ function renameTeamEverywhere(oldName, newName){
       delete g.lateTeams[oldName];
     }
   });
+  if(knockout && knockout.swaps){
+    knockout.swaps.forEach(sw=>{
+      if(sw.teamA===oldName) sw.teamA=newName;
+      if(sw.teamB===oldName) sw.teamB=newName;
+      sw.pos.forEach(ps=>{
+        if(ps.team===oldName) ps.team=newName;
+        if(ps.prev===oldName) ps.prev=newName;
+      });
+    });
+  }
+  if(knockout && knockout.rankOrder){
+    Object.keys(knockout.rankOrder).forEach(k=>{
+      knockout.rankOrder[k] = knockout.rankOrder[k].map(t=>t===oldName?newName:t);
+    });
+  }
   if(knockout && knockout.pairs){
     knockout.pairs.forEach(m=>{
       if(m.confirmedA===oldName) m.confirmedA=newName;
@@ -1901,7 +2083,14 @@ function renameTeamEverywhere(oldName, newName){
   }
   if(semifinal){
     if(semifinal.byeTeam===oldName) semifinal.byeTeam=newName;
-    ['decider','final'].forEach(key=>{
+    if(semifinal.semis){
+      semifinal.semis.forEach(m=>{
+        if(m.a===oldName) m.a=newName;
+        if(m.b===oldName) m.b=newName;
+        if(m.manualWinner===oldName) m.manualWinner=newName;
+      });
+    }
+    ['decider','final','third'].forEach(key=>{
       const m = semifinal[key];
       if(m){
         if(m.a===oldName) m.a=newName;
@@ -2329,15 +2518,191 @@ function resolveQualifier(groupsArr, groupIdx, rank, confirmed){
 }
 
 
-function knockoutPairResolved(groupsArr, m){
+/* ---------- 8 qualifiers out of 3 groups: 3 firsts + 3 seconds + best 2 thirds ---------- */
+const SLOT_LABELS = {F1:'أحسن أول', F2:'تاني أحسن أول', F3:'أضعف أول', S1:'أقوى تاني', S2:'تاني أضعف تاني', S3:'أضعف تاني', T1:'أحسن تالت', T2:'تاني أحسن تالت (الأضعف)'};
+
+function tierCandidates(groupsArr, kind){
+  const rank = kind==='F' ? 0 : (kind==='S' ? 1 : 2);
+  return groupsArr.map(g=>computeStandings(g)[rank]).filter(Boolean);
+}
+
+function sortedTier(groupsArr, ko, kind){
+  const c = tierCandidates(groupsArr, kind);
+  const ov = ko && ko.rankOrder && ko.rankOrder[kind];
+  if(ov && ov.length===c.length && ov.every(t=>c.some(x=>x.team===t))){
+    return ov.map(t=>c.find(x=>x.team===t));
+  }
+  return c.slice().sort((x,y)=> (y.wins-x.wins) || (y.diff-x.diff));
+}
+
+function best3Resolve(groupsArr, ko){
+  if(!groupsArr || groupsArr.length!==3 || !groupsArr.every(g=>g.teams.length>=3 && isGroupComplete(g))) return null;
+  const F = sortedTier(groupsArr, ko, 'F'), S = sortedTier(groupsArr, ko, 'S'), T = sortedTier(groupsArr, ko, 'T');
+  if(F.length<3 || S.length<3 || T.length<2) return null;
+  return {F1:F[0].team, F2:F[1].team, F3:F[2].team, S1:S[0].team, S2:S[1].team, S3:S[2].team, T1:T[0].team, T2:T[1].team};
+}
+
+function swapTier(kind, i){
+  if(!knockout) return;
+  const order = sortedTier(groups, knockout, kind).map(x=>x.team);
+  const tmp = order[i]; order[i] = order[i+1]; order[i+1] = tmp;
+  if(!knockout.rankOrder) knockout.rankOrder = {};
+  knockout.rankOrder[kind] = order;
+  renderKnockout();
+  saveState();
+}
+
+function resetTierOrder(kind){
+  if(!knockout || !knockout.rankOrder) return;
+  delete knockout.rankOrder[kind];
+  renderKnockout();
+  saveState();
+}
+
+function tierRankingHtml(){
+  const done = groups.length===3 && groups.every(g=>g.teams.length>=3 && isGroupComplete(g));
+  if(!done){
+    return '<div style="font-size:12px;color:var(--mut1);text-align:center;margin-bottom:10px;">ترتيب الأوايل والتواني والتوالت بيظهر بعد ما كل المجموعات تخلص (أو اختار الفرق بإيدك تحت)</div>';
+  }
+  const titles = {F:'ترتيب الأوايل', S:'ترتيب التواني', T:'ترتيب التوالت (أول اتنين بس بيصعدوا)'};
+  return ['F','S','T'].map(kind=>{
+    const arr = sortedTier(groups, knockout, kind);
+    const hasOv = knockout.rankOrder && knockout.rankOrder[kind];
+    const rows = arr.map((x,i)=>{
+      const out = (kind==='T' && i>=2);
+      const tie = (i < arr.length-1 && arr[i].wins===arr[i+1].wins && arr[i].diff===arr[i+1].diff);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:3px 0;${out?'opacity:.5;':''}">
+        <span>${i+1}. ${x.team}${out?' ❌':''}</span>
+        <span style="color:var(--mut2);">${x.wins} فوز • ${x.diff>0?'+':''}${x.diff}</span>
+      </div>${tie ? `<div class="tie-row">🟡 متعادلين <button onclick="swapTier('${kind}',${i})">بدّل الترتيب</button></div>` : ''}`;
+    }).join('');
+    return `<div style="margin-bottom:10px;"><div style="font-size:12.5px;font-weight:700;color:var(--head);margin-bottom:2px;">${titles[kind]}</div>${rows}${hasOv?`<div class="reset-order"><button onclick="resetTierOrder('${kind}')">إعادة الترتيب التلقائي</button></div>`:''}</div>`;
+  }).join('');
+}
+
+/* ---------- same-group clash warning + suggested swap (8-qualifier knockout) ---------- */
+function groupIdxOf(team){
+  return groups.findIndex(g=>g.teams.includes(team));
+}
+function pairHasResult(m){
+  return toNum(m.scoreA)!=null || toNum(m.scoreB)!=null || !!m.manualWinner;
+}
+function currentPositions(){
+  const out = [];
+  knockout.pairs.forEach((m,i)=>{
+    const r = knockoutPairResolved(groups, m);
+    out.push({i, side:'a', slot:m.aSlot, team:r.a});
+    out.push({i, side:'b', slot:m.bSlot, team:r.b});
+  });
+  return out;
+}
+function countClashes(teamPairs){
+  return teamPairs.filter(([a,b])=>{
+    if(!a || !b) return false;
+    const ga = groupIdxOf(a);
+    return ga !== -1 && ga === groupIdxOf(b);
+  }).length;
+}
+// best swap between two teams of the SAME level (first/second/third) that removes pair i's clash without creating a new one
+function findSwapFor(i){
+  if(!knockout || knockout.mode!=='best3') return null;
+  if(pairHasResult(knockout.pairs[i])) return null;
+  const pos = currentPositions();
+  const base = knockout.pairs.map((m,idx)=>[pos[idx*2].team, pos[idx*2+1].team]);
+  const baseClash = countClashes(base);
+  let best = null;
+  pos.filter(p=>p.i===i).forEach(p1=>{
+    pos.forEach(p2=>{
+      if(p2.i===p1.i) return;
+      if(p1.slot[0]!==p2.slot[0] || p1.slot===p2.slot) return;
+      if(!p1.team || !p2.team || p1.team===p2.team) return;
+      if(pairHasResult(knockout.pairs[p2.i])) return;
+      const sim = base.map(x=>x.slice());
+      sim[p1.i][p1.side==='a'?0:1] = p2.team;
+      sim[p2.i][p2.side==='a'?0:1] = p1.team;
+      const clashes = countClashes(sim);
+      if(clashes >= baseClash) return;
+      if(countClashes([sim[i]]) > 0) return;
+      const dist = Math.abs(Number(p1.slot[1]) - Number(p2.slot[1]));
+      if(!best || clashes<best.clashes || (clashes===best.clashes && dist<best.dist)){
+        best = {p1, p2, clashes, dist, sim};
+      }
+    });
+  });
+  return best;
+}
+function swapDescription(sw){
+  return `${sw.p1.team} (${SLOT_LABELS[sw.p1.slot]}) ↔ ${sw.p2.team} (${SLOT_LABELS[sw.p2.slot]})`;
+}
+function applySwap(i){
+  const sw = findSwapFor(i);
+  if(!sw) return;
+  const after = sw.sim.map(([a,b])=>`${a} ضد ${b}`).join('\n');
+  if(!confirm(`هبدّل: ${swapDescription(sw)}\n\nالماتشات بعد التبديل:\n${after}\n\nتمام؟`)) return;
+  const setC = (pos, team)=>{
+    const m = knockout.pairs[pos.i];
+    const prev = pos.side==='a' ? m.confirmedA : m.confirmedB;
+    if(pos.side==='a') m.confirmedA = team; else m.confirmedB = team;
+    return {i:pos.i, side:pos.side, prev:prev||null, team};
+  };
+  const rec1 = setC(sw.p1, sw.p2.team);
+  const rec2 = setC(sw.p2, sw.p1.team);
+  if(!knockout.swaps) knockout.swaps = [];
+  knockout.swaps.push({
+    teamA: sw.p1.team, slotA: sw.p1.slot,
+    teamB: sw.p2.team, slotB: sw.p2.slot,
+    pos: [rec1, rec2]
+  });
+  renderKnockout();
+  saveState();
+}
+function swapIsActive(sw){
+  return sw.pos.every(ps=>{
+    const m = knockout.pairs[ps.i];
+    return (ps.side==='a' ? m.confirmedA : m.confirmedB) === ps.team;
+  });
+}
+function undoSwaps(){
+  if(!knockout || !knockout.swaps) return;
+  for(let k=knockout.swaps.length-1;k>=0;k--){
+    const sw = knockout.swaps[k];
+    if(swapIsActive(sw)){
+      sw.pos.forEach(ps=>{
+        const m = knockout.pairs[ps.i];
+        if(ps.side==='a') m.confirmedA = ps.prev; else m.confirmedB = ps.prev;
+      });
+    }
+  }
+  knockout.swaps = [];
+  renderKnockout();
+  saveState();
+}
+function swapsNoteHtml(){
+  const act = (knockout.swaps||[]).filter(swapIsActive);
+  if(act.length===0) return '';
+  return `<div style="background:var(--unpaid-bg);border-radius:10px;padding:10px;margin-top:10px;font-size:12.5px;">
+    <div style="font-weight:700;color:var(--head);margin-bottom:4px;">🔁 التبديلات اللي اتعملت:</div>
+    ${act.map(sw=>`<div style="padding:2px 0;">${sw.teamA} (${SLOT_LABELS[sw.slotA]}) ↔ ${sw.teamB} (${SLOT_LABELS[sw.slotB]})</div>`).join('')}
+    <div class="reset-order"><button onclick="undoSwaps()">↩️ إلغاء التبديلات</button></div>
+  </div>`;
+}
+
+function knockoutPairResolved(groupsArr, m, ko){
+  if(m.aSlot){
+    const map = best3Resolve(groupsArr, ko || knockout);
+    return {
+      a: m.confirmedA || (map ? map[m.aSlot] : null),
+      b: m.confirmedB || (map ? map[m.bSlot] : null)
+    };
+  }
   return {
     a: resolveQualifier(groupsArr, m.aGroupIdx, 1, m.confirmedA),
     b: resolveQualifier(groupsArr, m.bGroupIdx, 2, m.confirmedB)
   };
 }
 
-function knockoutPairWinner(groupsArr, m){
-  const r = knockoutPairResolved(groupsArr, m);
+function knockoutPairWinner(groupsArr, m, ko){
+  const r = knockoutPairResolved(groupsArr, m, ko);
   if(!r.a || !r.b) return null;
   const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
   const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
@@ -2348,8 +2713,8 @@ function knockoutPairWinner(groupsArr, m){
   return null;
 }
 
-function knockoutPairMargin(groupsArr, m){
-  const r = knockoutPairResolved(groupsArr, m);
+function knockoutPairMargin(groupsArr, m, ko){
+  const r = knockoutPairResolved(groupsArr, m, ko);
   if(!r.a || !r.b) return null;
   const sa = (m.scoreA===''||m.scoreA==null) ? null : parseFloat(m.scoreA);
   const sb = (m.scoreB===''||m.scoreB==null) ? null : parseFloat(m.scoreB);
@@ -2362,6 +2727,19 @@ function knockoutPairMargin(groupsArr, m){
 function generateKnockout(){
   if(groups.length < 2){
     alert('محتاج مجموعتين على الأقل عشان تعمل القرعة');
+    return;
+  }
+  if(profile && profile.format==='groups' && profile.qualifiers===8 && groups.length===3){
+    if(!groups.every(g=>g.teams.length>=3)){
+      alert('كل مجموعة لازم يكون فيها 3 تيمات على الأقل');
+      return;
+    }
+    const mk = (a,b)=>({aSlot:a, bSlot:b, confirmedA:null, confirmedB:null, scoreA:'', scoreB:'', manualWinner:null});
+    knockout = {mode:'best3', rankOrder:{}, swaps:[], pairs:[mk('T2','F1'), mk('T1','F2'), mk('S3','F3'), mk('S2','S1')]};
+    semifinal = null;
+    renderKnockout();
+    renderSemiFinal();
+    saveState();
     return;
   }
   const n = groups.length;
@@ -2380,6 +2758,8 @@ function generateKnockout(){
   }));
 
   knockout = {pairs};
+  semifinal = null;
+  renderSemiFinal();
   renderKnockout();
   saveState();
 }
@@ -2414,7 +2794,7 @@ function setKnockoutWinner(i, side){
 
 
 function confirmQualifier(i, side, teamName){
-  if(!knockout) return;
+  if(!knockout || !teamName) return;
   const m = knockout.pairs[i];
   if(side==='a') m.confirmedA = teamName; else m.confirmedB = teamName;
   renderKnockout();
@@ -2431,14 +2811,17 @@ function unconfirmQualifier(i, side){
 
 function renderKnockout(){
   const out = document.getElementById('knockoutOutput');
+  const titleEl = document.getElementById('knockoutTitle');
+  if(titleEl) titleEl.textContent = (knockout && knockout.mode==='best3') ? '5. ربع النهائي (8 صاعدين)' : '5. قرعة الدور الوسيط (الأول ضد التاني)';
   if(!knockout || !knockout.pairs || knockout.pairs.length===0){
     out.innerHTML = '<div class="empty-hint">لسه مفيش قرعة - دوس "اعمل القرعة" في أي وقت، حتى قبل ما المجموعات تخلص</div>';
     return;
   }
-  out.innerHTML = knockout.pairs.map((m,i)=>{
+  const isSlots = knockout.mode === 'best3';
+  const pairsHtml = knockout.pairs.map((m,i)=>{
     const r = knockoutPairResolved(groups, m);
-    const labelA = `${groupLabel(m.aGroupIdx)}1`;
-    const labelB = `${groupLabel(m.bGroupIdx)}2`;
+    const labelA = isSlots ? SLOT_LABELS[m.aSlot] : `${groupLabel(m.aGroupIdx)}1`;
+    const labelB = isSlots ? SLOT_LABELS[m.bSlot] : `${groupLabel(m.bGroupIdx)}2`;
 
     function sideHtml(side, resolvedName, confirmed, groupIdx, rank){
       if(resolvedName){
@@ -2447,6 +2830,17 @@ function renderKnockout(){
             <div style="font-size:10px;color:var(--mut1);text-align:center;margin-bottom:2px;">${side==='a'?labelA:labelB}${confirmed?' (مؤكد يدوي)':''}</div>
             <button class="team-btn ${knockoutPairWinner(groups,m)===resolvedName?'winner':''}" onclick="setKnockoutWinner(${i},'${side}')">${resolvedName}</button>
             ${confirmed ? `<div style="text-align:center;"><button class="ghost" style="font-size:10px;padding:2px 8px;margin-top:2px;" onclick="unconfirmQualifier(${i},'${side}')">إلغاء التأكيد</button></div>` : ''}
+          </div>
+        `;
+      }
+      if(isSlots){
+        const allTeams = groups.flatMap(g=>g.teams);
+        const opts = allTeams.map(t=>`<option value="${t}">${t}</option>`).join('');
+        return `
+          <div style="flex:1;min-width:120px;">
+            <div style="font-size:10px;color:var(--mut1);text-align:center;margin-bottom:2px;">🔒 ${side==='a'?labelA:labelB}</div>
+            <div style="text-align:center;font-size:11px;color:var(--mut1);margin-bottom:4px;">لسه مش معروف - اتأكد يدوي:</div>
+            <select style="width:100%;" onchange="confirmQualifier(${i},'${side}',this.value)"><option value="">اختار فريق</option>${opts}</select>
           </div>
         `;
       }
@@ -2472,6 +2866,19 @@ function renderKnockout(){
       `;
     }
 
+    let warnHtml = '';
+    if(isSlots && r.a && r.b){
+      const ga = groupIdxOf(r.a);
+      if(ga !== -1 && ga === groupIdxOf(r.b)){
+        const sw = findSwapFor(i);
+        warnHtml = `<div style="margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--dangerbg);font-size:12px;">
+          ⚠️ التيمين لعبوا مع بعض في ${groups[ga].name}
+          ${sw ? `<div style="margin-top:4px;">🔁 مقترح: ${swapDescription(sw)}</div>
+          <button class="ghost" style="font-size:11.5px;padding:4px 12px;margin-top:4px;" onclick="applySwap(${i})">بدّل</button>` : `<div style="margin-top:4px;color:var(--mut2);">مفيش تبديل نضيف متاح للماتش ده</div>`}
+        </div>`;
+      }
+    }
+
     return `
       <div class="match-row ${hlClass(r.a, r.b)}" style="flex-direction:column; align-items:stretch;">
         <div style="display:flex;align-items:flex-start;gap:8px;">
@@ -2479,10 +2886,13 @@ function renderKnockout(){
           ${scoreHtml}
           ${sideHtml('b', r.b, m.confirmedB, m.bGroupIdx, 2)}
         </div>
+        ${warnHtml}
       </div>
     `;
   }).join('');
+  out.innerHTML = (isSlots ? tierRankingHtml() : '') + pairsHtml + (isSlots ? swapsNoteHtml() : '');
 }
+
 
 /* ---------- Archive ---------- */
 function saveTournament(){
@@ -2511,37 +2921,6 @@ function saveTournament(){
   saveState();
   renderHistory();
   alert('اتحفظت البطولة في الأرشيف ✓ تقدر تبدأ بطولة جديدة دلوقت لو حابب');
-}
-
-function startNewTournament(){
-  if(!confirm('هيمسح شاشة العمل الحالية (البطولات المحفوظة هتفضل زي ماهي في الأرشيف)، متأكد؟')) return false;
-  players = [];
-  groups = [];
-  knockout = null;
-  semifinal = null;
-  roundRobin = null;
-  profile = null;
-  wizard = null;
-  highlightTeam = null;
-  updateHighlightBar();
-  thursdayTeams = [];
-  thursdayTierAssignments = {};
-  document.getElementById('teamsInput').value = '';
-  document.getElementById('groupsInput').value = '';
-  document.getElementById('roundRobinInput').value = '';
-  document.getElementById('playersCard').style.display = 'none';
-  document.getElementById('totalsCard').style.display = 'none';
-  updateSearchFab();
-  document.getElementById('groupsOutput').innerHTML = '';
-  document.getElementById('knockoutOutput').innerHTML = '';
-  document.getElementById('semifinalOutput').innerHTML = '';
-  document.getElementById('roundRobinOutput').innerHTML = '';
-  document.getElementById('tiersOutput').innerHTML = '';
-  updateTypeUI();
-  renderProfileBox();
-  updateTeamsHint();
-  saveState();
-  return true;
 }
 
 function exportBackup(){
@@ -2624,13 +3003,21 @@ function renderHistory(){
     const knockoutHtml = (!isRR && h.knockout && h.knockout.pairs && h.knockout.pairs.length) ? `
       <h3 style="font-size:13px;margin:10px 0 4px;">قرعة الدور الوسيط</h3>
       ${h.knockout.pairs.map(m=>{
-        const r = knockoutPairResolved(h.groups||[], m);
-        const w = knockoutPairWinner(h.groups||[], m);
+        const r = knockoutPairResolved(h.groups||[], m, h.knockout);
+        const w = knockoutPairWinner(h.groups||[], m, h.knockout);
         const aLabel = r.a || '؟';
         const bLabel = r.b || '؟';
         return `<div style="font-size:12.5px;padding:4px 0;">${aLabel} <b>${m.scoreA||'?'}</b> - <b>${m.scoreB||'?'}</b> ${bLabel} ${w?`(فاز: ${w})`:''}</div>`;
       }).join('')}
     ` : '';
+
+    let semisHtml = '';
+    if(!isRR && h.semifinal && h.semifinal.semis){
+      semisHtml = `<h3 style="font-size:13px;margin:10px 0 4px;">النصف نهائي</h3>` + h.semifinal.semis.map(m=>{
+        const w = getMatchWinner(m);
+        return `<div style="font-size:12.5px;padding:4px 0;">${m.a} <b>${m.scoreA||'?'}</b> - <b>${m.scoreB||'?'}</b> ${m.b} ${w?`(فاز: ${w})`:''}</div>`;
+      }).join('');
+    }
 
     let championHtml = '';
     if(!isRR && h.semifinal && h.semifinal.final){
@@ -2640,7 +3027,9 @@ function renderHistory(){
         const runnerUp = champion===fm.a ? fm.b : fm.a;
         const dm = h.semifinal.decider;
         const deciderWinner = dm ? getMatchWinner(dm) : null;
-        const third = deciderWinner ? (dm.a===deciderWinner ? dm.b : dm.a) : null;
+        const tm = h.semifinal.third;
+        const thirdW = tm ? getMatchWinner(tm) : null;
+        const third = thirdW || (deciderWinner ? (dm.a===deciderWinner ? dm.b : dm.a) : null);
         championHtml = `
           <h3 style="font-size:13px;margin:10px 0 4px;">النتيجة النهائية</h3>
           <div style="font-size:12.5px;">🥇 بطل: <b>${champion}</b></div>
@@ -2666,6 +3055,7 @@ function renderHistory(){
         <div class="history-detail" id="hd-${h.id}">
           ${groupsHtml || (!isRR ? '<div class="empty-hint">مفيش مجموعات محفوظة في البطولة دي</div>' : '')}
           ${knockoutHtml}
+          ${semisHtml}
           ${championHtml}
           ${sundayHtml}
         </div>
@@ -2677,8 +3067,26 @@ function renderHistory(){
 /* ---------- Low D drop tracker ---------- */
 /* ---------- Semi-final (decider) + Final ---------- */
 function generateSemiFinal(){
-  if(!knockout || !knockout.pairs || (knockout.pairs.length !== 2 && knockout.pairs.length !== 3)){
-    alert('محتاج قرعة الدور الوسيط تكون فيها 2 أو 3 ماتشات بالظبط الأول');
+  if(!knockout || !knockout.pairs || ![2,3,4].includes(knockout.pairs.length)){
+    alert('محتاج قرعة الدور الوسيط تكون فيها 2 أو 3 أو 4 ماتشات بالظبط الأول');
+    return;
+  }
+
+  if(knockout.pairs.length === 4){
+    const w = knockout.pairs.map(m=>knockoutPairWinner(groups, m));
+    if(w.some(x=>!x)){
+      alert('محتاج نتيجة الأربع ماتشات بتوع ربع النهائي الأول');
+      return;
+    }
+    const mkm = (a,b)=>({a, b, scoreA:'', scoreB:'', manualWinner:null});
+    semifinal = {
+      semis: [mkm(w[0], w[3]), mkm(w[1], w[2])],
+      thirdEnabled: false,
+      third: null,
+      final: null
+    };
+    renderSemiFinal();
+    saveState();
     return;
   }
 
@@ -2801,10 +3209,97 @@ function renderMatchRowGeneric(m, onWinnerA, onWinnerB, onScoreA, onScoreB){
   `;
 }
 
+function setSemiScore(i, side, value){
+  if(!semifinal || !semifinal.semis) return;
+  const m = semifinal.semis[i];
+  if(side==='a') m.scoreA = value; else m.scoreB = value;
+  m.auto = false;
+  renderSemiFinal();
+  saveState();
+}
+function setSemiWinner(i, side){
+  if(!semifinal || !semifinal.semis) return;
+  const m = semifinal.semis[i];
+  if(!tapWinner(m, m.a, m.b, side)) return;
+  renderSemiFinal();
+  saveState();
+}
+function setThirdScore(side, value){
+  if(!semifinal || !semifinal.third) return;
+  if(side==='a') semifinal.third.scoreA = value; else semifinal.third.scoreB = value;
+  semifinal.third.auto = false;
+  renderSemiFinal();
+  saveState();
+}
+function setThirdWinner(side){
+  if(!semifinal || !semifinal.third) return;
+  const m = semifinal.third;
+  if(!tapWinner(m, m.a, m.b, side)) return;
+  renderSemiFinal();
+  saveState();
+}
+function toggleThird(){
+  if(!semifinal || !semifinal.semis) return;
+  semifinal.thirdEnabled = !semifinal.thirdEnabled;
+  if(!semifinal.thirdEnabled) semifinal.third = null;
+  renderSemiFinal();
+  saveState();
+}
+
+function renderSemisHtml(){
+  const sf = semifinal;
+  const w = sf.semis.map(m=>getMatchWinner(m));
+  if(w[0] && w[1]){
+    if(!sf.final || sf.final.a!==w[0] || sf.final.b!==w[1]){
+      sf.final = {a:w[0], b:w[1], scoreA:'', scoreB:'', manualWinner:null};
+    }
+  } else {
+    sf.final = null;
+  }
+  const losers = sf.semis.map((m,i)=> w[i] ? (m.a===w[i] ? m.b : m.a) : null);
+  if(sf.thirdEnabled && losers[0] && losers[1]){
+    if(!sf.third || sf.third.a!==losers[0] || sf.third.b!==losers[1]){
+      sf.third = {a:losers[0], b:losers[1], scoreA:'', scoreB:'', manualWinner:null};
+    }
+  } else {
+    sf.third = null;
+  }
+
+  let html = `<div style="font-size:11px;color:var(--mut1);margin-bottom:4px;">النصف نهائي:</div>`;
+  sf.semis.forEach((m,i)=>{
+    html += renderMatchRowGeneric(m, `setSemiWinner(${i},'a')`, `setSemiWinner(${i},'b')`, `setSemiScore(${i},'a',this.value)`, `setSemiScore(${i},'b',this.value)`);
+  });
+
+  if(sf.final){
+    html += `<div style="font-size:11px;color:var(--mut1);margin:10px 0 4px;">🏆 النهائي:</div>`;
+    html += renderMatchRowGeneric(sf.final, `setFinalWinner('a')`, `setFinalWinner('b')`, `setFinalScore('a',this.value)`, `setFinalScore('b',this.value)`);
+  }
+
+  html += `<div class="row-inline"><button class="ghost" onclick="toggleThird()">${sf.thirdEnabled ? '✖ إلغاء ماتش المركز التالت' : '➕ ماتش المركز التالت (اختياري)'}</button></div>`;
+  if(sf.third){
+    html += `<div style="font-size:11px;color:var(--mut1);margin:10px 0 4px;">🥉 ماتش المركز التالت:</div>`;
+    html += renderMatchRowGeneric(sf.third, `setThirdWinner('a')`, `setThirdWinner('b')`, `setThirdScore('a',this.value)`, `setThirdScore('b',this.value)`);
+  }
+
+  const champion = sf.final ? getMatchWinner(sf.final) : null;
+  if(champion){
+    const runnerUp = champion===sf.final.a ? sf.final.b : sf.final.a;
+    const thirdW = sf.third ? getMatchWinner(sf.third) : null;
+    html += `
+      <div class="grand" style="margin-top:10px;">
+        <div class="lbl">🥇 بطل البطولة</div>
+        <div class="num" style="font-size:18px;">${champion}</div>
+        <div class="lbl" style="margin-top:6px;">🥈 وصيف: ${runnerUp}</div>
+        ${thirdW ? `<div class="lbl">🥉 مركز تالت: ${thirdW}</div>` : ''}
+      </div>`;
+  }
+  return html;
+}
+
 function renderSemiFinal(){
   const out = document.getElementById('semifinalOutput');
   if(!semifinal){
-    out.innerHTML = '<div class="empty-hint">لسه مفيش - دوس "تحديد الصاعد مباشرة للنهائي" بعد ما تخلص نتايج قرعة الدور الوسيط بالأشواط كاملة</div>';
+    out.innerHTML = '<div class="empty-hint">لسه مفيش - دوس "تكوين الدور اللي بعده" بعد ما تخلص نتايج قرعة الدور الوسيط</div>';
     return;
   }
 
@@ -2818,6 +3313,11 @@ function renderSemiFinal(){
         <button class="primary" onclick="doCoinFlip()">🪙 قرعة ملك وكتابة</button>
       </div>
     `;
+    return;
+  }
+
+  if(semifinal.semis){
+    out.innerHTML = renderSemisHtml();
     return;
   }
 
