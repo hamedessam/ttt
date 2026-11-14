@@ -439,6 +439,19 @@
   .wz-step{font-size:11.5px; color:var(--mut1); margin-bottom:8px;}
   .wz-choices{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
   .wz-choices button{flex:1; min-width:130px;}
+  .tier-chips{display:flex; gap:8px; margin-bottom:10px;}
+  .tier-chip{flex:1; padding:10px 4px; border-radius:10px; border:2px solid var(--tc); background:var(--card); color:var(--tc); font-family:'Cairo',sans-serif; font-weight:900; font-size:18px; cursor:pointer; display:flex; flex-direction:column; align-items:center; line-height:1.2;}
+  .tier-chip span{font-size:11px; font-weight:600;}
+  .tier-chip.on{background:var(--tc); color:#fff; box-shadow:0 0 0 3px rgba(128,128,128,.25);}
+  .tier-teams{display:flex; flex-direction:column; gap:6px;}
+  .tier-team{display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-radius:10px; border:1.5px solid var(--bd2); background:var(--unpaid-bg); color:var(--text); font-family:'Cairo',sans-serif; font-size:14px; cursor:pointer; text-align:right;}
+  .tier-team.assigned{background:var(--tc); border-color:var(--tc); color:#fff; font-weight:700;}
+  .qual-badge{font-size:10.5px; color:var(--cash); font-weight:700;}
+  #undoToast{position:fixed; top:10px; left:50%; transform:translateX(-50%); z-index:95; display:none; align-items:center; gap:10px; max-width:92vw; background:var(--court-dark); color:var(--line); border-radius:24px; padding:8px 8px 8px 16px; font-size:13.5px; font-weight:600; box-shadow:0 3px 12px rgba(0,0,0,.35);}
+  #undoToast button{background:var(--ball); color:#0a3436; border:none; border-radius:16px; padding:6px 14px; font-family:'Cairo',sans-serif; font-weight:700; font-size:13px; cursor:pointer; white-space:nowrap;}
+  .sp-card{border:1.5px solid var(--bd1); border-radius:10px; padding:8px 10px; margin-bottom:8px; background:var(--unpaid-bg);}
+  .sp-card.allpaid{background:var(--paidbg); border-color:var(--cash);}
+  .sp-sub{display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-top:1px dashed var(--bd2); flex-wrap:wrap;}
 </style>
 </head>
 <body>
@@ -478,6 +491,7 @@
     <h2>2. حالة الدفع</h2>
     <div class="row-inline" style="margin-top:0; margin-bottom:10px;">
       <button class="ghost" id="unpaidOnlyBtn" onclick="toggleUnpaidOnly()">❌ مين مدفعش بس</button>
+      <button class="ghost" id="refreshUnpaidBtn" style="display:none;" onclick="refreshUnpaidList()">🔄 شيل اللي دفعوا من القايمة</button>
     </div>
     <div id="playersList"></div>
   </div>
@@ -588,6 +602,8 @@
 
 </div>
 
+<div id="undoToast"><span id="undoText"></span><button onclick="undoLast()">↩️ تراجع</button></div>
+
 <div id="highlightBar"><span id="hlName"></span><button onclick="clearHighlight()">✕ إلغاء</button></div>
 
 <button id="searchFab" onclick="toggleSearchPanel()">🔍 دوّر على لاعب</button>
@@ -604,6 +620,7 @@
 
 let profile = null; // {name, teams, format:'groups'|'roundrobin', groupsBy:'manual'|'auto'|null, price, qualifiers}
 let wizard = null; // profile questions in progress (not saved)
+let activeTier = null; // selected tier colour while assigning (not saved)
 let savedProfiles = []; // other profiles, each {id, profile, data} with its full working state
 let thursdayTeams = [];
 let thursdayTierAssignments = {}; // teamName -> 'A1'|'A2'|...
@@ -794,6 +811,7 @@ function loadState(){
       updateTypeUI();
       renderProfileBox();
       renderTiersUI();
+      assignLegacyTeams();
       if(players.length > 0){
         document.getElementById('playersCard').style.display = 'block';
         document.getElementById('totalsCard').style.display = 'block';
@@ -1011,6 +1029,8 @@ function stashCurrent(){
 }
 
 function clearWorking(){
+  hideUndo();
+  keepVisible.clear();
   players = [];
   groups = [];
   knockout = null;
@@ -1048,6 +1068,7 @@ function applyWorking(d){
   roundRobin = d.roundRobin || null;
   thursdayTeams = d.thursdayTeams || [];
   thursdayTierAssignments = d.thursdayTierAssignments || {};
+  assignLegacyTeams();
   const has = players.length > 0;
   document.getElementById('playersCard').style.display = has ? 'block' : 'none';
   document.getElementById('totalsCard').style.display = has ? 'block' : 'none';
@@ -1242,55 +1263,82 @@ function tierSlotsFor(n){
 }
 
 
+const TIER_COLORS = {A:'var(--cash)', B:'var(--instapay)', C:'var(--canteen)', D:'var(--makram)'};
+
 function renderTiersUI(){
   const out = document.getElementById('tiersOutput');
   if(thursdayTeams.length === 0){
     out.innerHTML = '';
     return;
   }
-  const tierSlots = tierSlotsFor(thursdayTeams.length);
-  const usedSlots = Object.values(thursdayTierAssignments);
-  const rows = thursdayTeams.map(team=>{
-    const current = thursdayTierAssignments[team] || '';
-    const options = tierSlots.map(slot=>{
-      const takenByOther = usedSlots.includes(slot) && current!==slot;
-      return `<option value="${slot}" ${slot===current?'selected':''} ${takenByOther?'disabled':''}>${slot}${takenByOther?' (متاخد)':''}</option>`;
-    }).join('');
-    return `
-      <div class="row-inline" style="justify-content:space-between; margin-top:6px;">
-        <span style="font-size:13px;">${team}</span>
-        <select onchange="setTierAssignment('${team.replace(/'/g,"\\'")}', this.value)">
-          <option value="">اختار تصنيف</option>
-          ${options}
-        </select>
-      </div>
-    `;
+  const G = Math.floor(thursdayTeams.length/4);
+  const used = Object.values(thursdayTierAssignments);
+  const chips = ['A','B','C','D'].map(t=>{
+    const cnt = used.filter(sl=>sl[0]===t).length;
+    return `<button class="tier-chip ${activeTier===t?'on':''}" style="--tc:${TIER_COLORS[t]}" onclick="selectTier('${t}')">${t}<span>${cnt}/${G}</span></button>`;
   }).join('');
-  out.innerHTML = rows + `
+  const rows = thursdayTeams.map(team=>{
+    const slot = thursdayTierAssignments[team];
+    return `<button class="tier-team ${slot?'assigned':''}" ${slot?`style="--tc:${TIER_COLORS[slot[0]]}"`:''} onclick="tapTierTeam('${escJs(team)}')"><span>${team}</span><b>${slot||''}</b></button>`;
+  }).join('');
+  out.innerHTML = `
+    <div style="font-size:12.5px;color:var(--mut2);margin-bottom:8px;">اختار لون التصنيف، وبعدين دوس على التيمات بالترتيب (أول تيم A1 وبعده A2...). دوس على تيم ملون تاني عشان تشيل لونه وتصنيفه.</div>
+    <div class="tier-chips">${chips}</div>
+    <div class="tier-teams">${rows}</div>
     <div class="row-inline">
-      <button class="primary" onclick="generateThursdayGroups()">كوّن المجموعتين</button>
+      <button class="primary" onclick="generateThursdayGroups()">كوّن المجموعات</button>
       <button class="ghost" onclick="resetThursdayTiers()">مسح</button>
     </div>
   `;
 }
 
-function setTierAssignment(team, slot){
-  Object.keys(thursdayTierAssignments).forEach(t=>{
-    if(thursdayTierAssignments[t] === slot) delete thursdayTierAssignments[t];
-  });
-  if(slot === ''){
+function selectTier(t){
+  activeTier = (activeTier === t) ? null : t;
+  renderTiersUI();
+}
+
+function tapTierTeam(team){
+  const cur = thursdayTierAssignments[team];
+  if(cur){
     delete thursdayTierAssignments[team];
   } else {
-    thursdayTierAssignments[team] = slot;
+    if(!activeTier){
+      alert('اختار لون التصنيف الأول (A أو B أو C أو D)');
+      return;
+    }
+    const G = Math.floor(thursdayTeams.length/4);
+    const used = Object.values(thursdayTierAssignments);
+    let k = 1;
+    while(k<=G && used.includes(activeTier+k)) k++;
+    if(k > G){
+      alert(`التصنيف ${activeTier} كامل (${G} فرق)`);
+      return;
+    }
+    thursdayTierAssignments[team] = activeTier + k;
+    // when this tier gets full, jump to the next tier that still has room
+    const usedNow = Object.values(thursdayTierAssignments);
+    if(usedNow.filter(sl=>sl[0]===activeTier).length >= G){
+      const order = ['A','B','C','D'];
+      const start = order.indexOf(activeTier);
+      let next = null;
+      for(let step=1; step<=4; step++){
+        const t = order[(start+step)%4];
+        if(usedNow.filter(sl=>sl[0]===t).length < G){ next = t; break; }
+      }
+      activeTier = next;
+    }
   }
   renderTiersUI();
   saveState();
 }
 
+
+
 function resetThursdayTiers(){
   if(!confirm('هيمسح كل التصنيفات، متأكد؟')) return;
   thursdayTeams = [];
   thursdayTierAssignments = {};
+  activeTier = null;
   renderTiersUI();
   saveState();
 }
@@ -1348,6 +1396,7 @@ function parseTeams(){
   const raw = document.getElementById('teamsInput').value;
   const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
   const newPlayers = [];
+  let tid = 0;
 
   lines.forEach(line=>{
     let clean = line
@@ -1366,8 +1415,9 @@ function parseTeams(){
       p1 = clean;
       p2 = null;
     }
-    if(p1) newPlayers.push({name:p1, status:null});
-    if(p2) newPlayers.push({name:p2, status:null});
+    if(p1) newPlayers.push({name:p1, status:null, team:tid});
+    if(p2) newPlayers.push({name:p2, status:null, team:tid});
+    if(p1 || p2) tid++;
   });
 
   if(newPlayers.length === 0){
@@ -1390,15 +1440,19 @@ function methodButtonsHtml(i, p){
 
 function toggleUnpaidOnly(){
   unpaidOnly = !unpaidOnly;
+  keepVisible.clear();
   renderPlayers();
 }
 function toggleSpUnpaid(){
   spUnpaid = !spUnpaid;
+  keepVisible.clear();
   renderPlayerSearch();
 }
 function updateUnpaidBtns(){
   const a = document.getElementById('unpaidOnlyBtn');
   if(a){ a.classList.toggle('on', unpaidOnly); a.textContent = unpaidOnly ? '✅ اعرض الكل' : '❌ مين مدفعش بس'; }
+  const rb = document.getElementById('refreshUnpaidBtn');
+  if(rb){ rb.style.display = (unpaidOnly && Array.from(keepVisible).some(j=>players[j] && players[j].status)) ? 'inline-block' : 'none'; }
   const b = document.getElementById('spUnpaidBtn');
   if(b){ b.classList.toggle('on', spUnpaid); b.textContent = spUnpaid ? '✅ الكل' : '❌ مين مدفعش بس'; }
 }
@@ -1411,7 +1465,7 @@ function renderPlayers(){
     updateSearchFab();
     return;
   }
-  const shown = players.map((p,i)=>({p,i})).filter(x=>!unpaidOnly || !x.p.status);
+  const shown = players.map((p,i)=>({p,i})).filter(x=>!unpaidOnly || !x.p.status || keepVisible.has(x.i));
   if(shown.length === 0){
     list.innerHTML = '<div class="empty-hint">الكل حاسب 🎉</div>';
   } else {
@@ -1471,6 +1525,7 @@ function toggleSearchPanel(){
   if(!searchOpen){
     document.getElementById('searchInput').value = '';
     spUnpaid = false;
+    keepVisible.clear();
   }
   document.getElementById('searchPanel').style.display = searchOpen ? 'block' : 'none';
   updateSearchFab();
@@ -1486,35 +1541,146 @@ function renderPlayerSearch(){
   updateUnpaidBtns();
   if(!searchOpen) return;
   const q = normAr(document.getElementById('searchInput').value);
-  let items = players.map((p,i)=>({p,i}));
-  if(spUnpaid) items = items.filter(x=>!x.p.status);
-  if(q) items = items.filter(x=>normAr(x.p.name).includes(q));
+  let cand = players.map((p,i)=>({p,i}));
+  if(spUnpaid) cand = cand.filter(x=>!x.p.status || keepVisible.has(x.i));
+  if(q) cand = cand.filter(x=>normAr(x.p.name).includes(q));
   else if(!spUnpaid){
     box.innerHTML = '<div class="empty-hint">اكتب أول حرف أو حرفين من الاسم</div>';
     return;
   }
-  if(items.length === 0){
+  if(cand.length === 0){
     box.innerHTML = '<div class="empty-hint">' + ((spUnpaid && !q) ? 'الكل حاسب 🎉' : 'مفيش حد بالاسم ده') + '</div>';
     return;
   }
+  const matchedSet = new Set(cand.map(c=>c.i));
+  const seen = new Set();
+  const cards = [];
+  cand.forEach(({i})=>{
+    const mates = teamMates(i);
+    const key = mates.length > 1 ? 't' + players[i].team : 'p' + i;
+    if(seen.has(key)) return;
+    seen.add(key);
+    cards.push(mates);
+  });
   const hasPlaces = groups.length > 0 || (roundRobin && roundRobin.teams);
-  box.innerHTML = items.slice(0,40).map(({p, i})=>{
-    const places = findPlayerPlaces(p.name);
-    const placeTxt = places.length
-      ? places.map(x=>`${x.label} — ${x.team}`).join(' / ')
-      : (hasPlaces ? 'مش لاقيه في أي مجموعة' : 'لسه مفيش مجموعات');
+  box.innerHTML = cards.slice(0,30).map(mates=>{
+    const labels = [];
+    mates.forEach(j=>{ findPlayerPlaces(players[j].name).forEach(x=>{ const t = `${x.label} — ${x.team}`; if(!labels.includes(t)) labels.push(t); }); });
+    const placeTxt = labels.length ? labels.join(' / ') : (hasPlaces ? 'مش لاقيه في أي مجموعة' : 'لسه مفيش مجموعات');
+    const allPaid = mates.every(j=>players[j].status);
+    const bulk = mates.length > 1 ? `
+      <div class="sp-sub" style="border-top:none;">
+        <span class="pname" style="color:var(--head);">للاتنين مع بعض:</span>
+        <div class="methods">${PAY_BUTTONS.map(([k,l])=>`<button class="${mates.every(j=>players[j].status===k)?'sel-'+k:''}" onclick="setTeamStatus(${mates[0]},'${k}')">${l}</button>`).join('')}</div>
+      </div>` : '';
+    const rows = mates.map(j=>`
+      <div class="sp-sub" style="${mates.length>1?'':'border-top:none;'}">
+        <span class="pname" style="${matchedSet.has(j)?'':'font-weight:500;opacity:.85;'}">${players[j].name}</span>
+        <div class="methods">${methodButtonsHtml(j, players[j])}</div>
+      </div>`).join('');
     return `
-      <div class="player-row ${p.status?'paid':''}" style="flex-direction:column; align-items:stretch;">
-        <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">
-          <div class="pname">${p.name}</div>
-          <div style="font-size:12px; color:var(--mut3);">👥 ${placeTxt}</div>
-        </div>
-        <div class="methods">${methodButtonsHtml(i, p)}</div>
-      </div>
-    `;
+      <div class="sp-card ${allPaid?'allpaid':''}">
+        <div style="font-size:12px;color:var(--mut3);margin-bottom:4px;">👥 ${placeTxt}</div>
+        ${bulk}
+        ${rows}
+      </div>`;
   }).join('');
 }
 
+
+let keepVisible = new Set(); // players just changed while a "unpaid only" filter is on: they stay on screen until refreshed
+let undoState = null;
+let undoTimer = null;
+
+function splitPlayerLine(line){
+  const clean = line.trim().replace(/^\s*\d+\s*[-.)،]?\s*/,'').replace(/تيم\s*/,'').trim();
+  if(!clean) return null;
+  const idx = clean.indexOf(' و');
+  if(idx !== -1) return [clean.slice(0, idx).trim(), clean.slice(idx+2).trim()].filter(Boolean);
+  return [clean];
+}
+
+// players saved before team ids existed: rebuild the pairs from the pasted list if it still matches
+function assignLegacyTeams(){
+  if(players.length === 0 || !players.some(p=>p.team == null)) return;
+  const lines = document.getElementById('teamsInput').value.split('\n').map(l=>l.trim()).filter(Boolean);
+  const seq = [];
+  let tid = 0;
+  lines.forEach(line=>{
+    const names = splitPlayerLine(line);
+    if(!names || names.length === 0) return;
+    names.forEach(n=>seq.push({name:n, team:tid}));
+    tid++;
+  });
+  if(seq.length !== players.length) return;
+  if(!seq.every((x,i)=>x.name === players[i].name)) return;
+  players.forEach((p,i)=>{ p.team = seq[i].team; });
+}
+
+function teamMates(i){
+  const p = players[i];
+  if(!p || p.team == null) return [i];
+  const out = [];
+  players.forEach((q,j)=>{ if(q.team === p.team) out.push(j); });
+  return out.length ? out : [i];
+}
+
+function payLabel(k){
+  const f = PAY_BUTTONS.find(x=>x[0]===k);
+  return f ? f[1] : '';
+}
+
+function showUndo(text, changes){
+  undoState = changes;
+  document.getElementById('undoText').textContent = text;
+  document.getElementById('undoToast').style.display = 'flex';
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndo, 9000);
+}
+function hideUndo(){
+  undoState = null;
+  clearTimeout(undoTimer);
+  const t = document.getElementById('undoToast');
+  if(t) t.style.display = 'none';
+}
+function undoLast(){
+  if(!undoState) return;
+  undoState.forEach(c=>{ if(players[c.i]) players[c.i].status = c.prev; });
+  hideUndo();
+  renderPlayers();
+  updateTotals();
+  saveState();
+}
+
+function applyStatusChange(indices, method){
+  const allHave = indices.every(j=>players[j].status === method);
+  const changes = indices.map(j=>({i:j, prev:players[j].status}));
+  indices.forEach(j=>{
+    players[j].status = allHave ? null : method;
+    keepVisible.add(j);
+  });
+  const names = indices.map(j=>players[j].name).join(' و ');
+  showUndo(allHave ? `اتلغى دفع: ${names}` : `✓ ${names} — ${payLabel(method)}`, changes);
+}
+
+function setStatus(i, method){
+  applyStatusChange([i], method);
+  renderPlayers();
+  updateTotals();
+  saveState();
+}
+
+function setTeamStatus(i, method){
+  applyStatusChange(teamMates(i), method);
+  renderPlayers();
+  updateTotals();
+  saveState();
+}
+
+function refreshUnpaidList(){
+  keepVisible.clear();
+  renderPlayers();
+}
 
 function editPlayerName(i){
   const newName = prompt('اسم اللاعب الجديد:', players[i].name);
@@ -1524,12 +1690,7 @@ function editPlayerName(i){
   saveState();
 }
 
-function setStatus(i, method){
-  players[i].status = (players[i].status === method) ? null : method;
-  renderPlayers();
-  updateTotals();
-  saveState();
-}
+
 
 function updateTotals(){
   const price = parseFloat(document.getElementById('priceInput').value) || 0;
@@ -1858,6 +2019,7 @@ function isTiedUnresolved(g, x, y){
 
 function renderGroups(){
   const out = document.getElementById('groupsOutput');
+  const qualMap = best3Active() ? best3Partial(groups).qual : {};
   out.innerHTML = groups.map((g, gi)=>{
     const lateTeams = g.lateTeams || {};
     const lateBadge = (teamName)=>{
@@ -1901,7 +2063,7 @@ function renderGroups(){
       return `
         <tr class="${rankClass} ${highlightTeam&&s.team===highlightTeam?'hl-row':''}">
           <td>${si+1}</td>
-          <td>${s.team}${findBtn(s.team)} <button class="ghost" style="font-size:10px;padding:2px 6px;" onclick="editTeamName(${gi},'${s.team.replace(/'/g,"\\'")}')">✏️</button></td>
+          <td>${s.team}${findBtn(s.team)}${qualMap[s.team] ? ' <span class="qual-badge">✅ صاعد</span>' : ''} <button class="ghost" style="font-size:10px;padding:2px 6px;" onclick="editTeamName(${gi},'${s.team.replace(/'/g,"\\'")}')">✏️</button></td>
           <td>${s.wins}</td>
           <td>${s.diff>0?'+':''}${s.diff}</td>
         </tr>
@@ -2518,6 +2680,195 @@ function resolveQualifier(groupsArr, groupIdx, rank, confirmed){
 }
 
 
+/* ---------- certainty engine: which ranks can no longer change ---------- */
+const MAX_MARGIN = 6;
+const analysisCache = new Map();
+
+function pairKey(x, y){ return x < y ? x + '\u0001' + y : y + '\u0001' + x; }
+
+function groupDecided(g){
+  const out = [];
+  g.matches.forEach((m, mi)=>{
+    const r = resolveMatchTeams(g, mi);
+    if(!r) return;
+    const w = getResolvedWinner(g, mi);
+    if(!w) return;
+    if(!g.teams.includes(r.a) || !g.teams.includes(r.b)) return;
+    const sa = toNum(m.scoreA), sb = toNum(m.scoreB);
+    out.push({a:r.a, b:r.b, w:w, d:(sa!=null && sb!=null) ? (sa-sb) : null});
+  });
+  return out;
+}
+
+function analyzeGroup(g){
+  const decided = groupDecided(g);
+  const sig = JSON.stringify([g.teams, decided, g.override || null]);
+  const hit = analysisCache.get(sig);
+  if(hit) return hit;
+  const res = computeGroupAnalysis(g, decided);
+  if(analysisCache.size > 300) analysisCache.clear();
+  analysisCache.set(sig, res);
+  return res;
+}
+
+function computeGroupAnalysis(g, decided){
+  const teams = g.teams;
+  const played = new Set(decided.map(d=>pairKey(d.a, d.b)));
+  const remaining = [];
+  for(let i=0;i<teams.length;i++){
+    for(let j=i+1;j<teams.length;j++){
+      if(!played.has(pairKey(teams[i], teams[j]))) remaining.push([teams[i], teams[j]]);
+    }
+  }
+  const mk = ()=>({teams:new Set(), min:Infinity, max:-Infinity});
+  let info = {1:mk(), 2:mk(), 3:mk()};
+  const teamRanks = {};
+  teams.forEach(t=>{ teamRanks[t] = new Set(); });
+
+  const unsure = ()=>{
+    const i2 = {};
+    [1,2,3].forEach(r=>{ i2[r] = {teams:new Set(teams), min:-Infinity, max:Infinity}; });
+    const tr = {};
+    teams.forEach(t=>{ tr[t] = new Set([1,2,3,4]); });
+    return {info:i2, teamRanks:tr, complete:false, unsure:true};
+  };
+
+  if(remaining.length === 0){
+    const st = computeStandings(g);
+    st.forEach((x, i)=>{
+      teamRanks[x.team].add(i+1);
+      if(i < 3){
+        const key = x.wins*1000 + x.diff;
+        info[i+1] = {teams:new Set([x.team]), min:key, max:key};
+      }
+    });
+    return {info, teamRanks, complete:true, unsure:false};
+  }
+  if(remaining.length >= 5 || teams.length > 4) return unsure();
+
+  const W = {}, D = {}, H = {};
+  teams.forEach(t=>{ W[t]=0; D[t]=0; });
+  decided.forEach(d=>{
+    W[d.w]++;
+    H[pairKey(d.a, d.b)] = d.w;
+    if(d.d != null){ D[d.a] += d.d; D[d.b] -= d.d; }
+  });
+
+  let bad = false;
+  const cmp = (x, y)=>{
+    if(W[y] !== W[x]) return W[y] - W[x];
+    if(D[y] !== D[x]) return D[y] - D[x];
+    const w = H[pairKey(x, y)];
+    if(w === x) return -1;
+    if(w === y) return 1;
+    return 0;
+  };
+  const leaf = ()=>{
+    const arr = teams.slice().sort(cmp);
+    for(let i=0;i<arr.length;i++){
+      for(let j=i+1;j<arr.length;j++){
+        if(cmp(arr[i], arr[j]) >= 0){ bad = true; return; }
+      }
+    }
+    arr.forEach((t, i)=>{
+      teamRanks[t].add(i+1);
+      if(i < 3){
+        const key = W[t]*1000 + D[t];
+        const e = info[i+1];
+        e.teams.add(t);
+        if(key < e.min) e.min = key;
+        if(key > e.max) e.max = key;
+      }
+    });
+  };
+  const rec = (k)=>{
+    if(bad) return;
+    if(k === remaining.length){ leaf(); return; }
+    const x = remaining[k][0], y = remaining[k][1];
+    const key = pairKey(x, y);
+    for(const w of [x, y]){
+      const l = (w === x) ? y : x;
+      for(let m=1; m<=MAX_MARGIN; m++){
+        W[w]++; D[w] += m; D[l] -= m; H[key] = w;
+        rec(k+1);
+        W[w]--; D[w] -= m; D[l] += m; delete H[key];
+        if(bad) return;
+      }
+    }
+  };
+  rec(0);
+  if(bad) return unsure();
+  return {info, teamRanks, complete:false, unsure:false};
+}
+
+// position (1..n) of each group's element at tier rank r among all groups, or null if it can still change
+function tierPositions(infos, r){
+  const els = infos.map(x=>x.info[r]);
+  return els.map((e, gi)=>{
+    if(e.teams.size === 0) return null;
+    let above = 0, below = 0;
+    els.forEach((o, hi)=>{
+      if(hi === gi) return;
+      if(o.min > e.max) above++;
+      else if(o.max < e.min) below++;
+    });
+    return (above + below === els.length - 1) ? above + 1 : null;
+  });
+}
+
+function best3Partial(groupsArr){
+  const out = {slots:{}, qual:{}};
+  if(!groupsArr || groupsArr.length !== 3 || groupsArr.some(g=>g.teams.length < 3 || g.teams.length > 4)) return out;
+  const infos = groupsArr.map(analyzeGroup);
+  const kinds = {1:'F', 2:'S', 3:'T'};
+  const thirdPos = tierPositions(infos, 3);
+  [1,2,3].forEach(r=>{
+    const pos = (r === 3) ? thirdPos : tierPositions(infos, r);
+    pos.forEach((p, gi)=>{
+      if(!p) return;
+      if(r === 3 && p > 2) return;
+      const e = infos[gi].info[r];
+      out.slots[kinds[r] + p] = {gi:gi, team:(e.teams.size === 1 ? Array.from(e.teams)[0] : null)};
+    });
+  });
+  groupsArr.forEach((g, gi)=>{
+    g.teams.forEach(t=>{
+      const ranks = infos[gi].teamRanks[t];
+      let ok = ranks.size > 0;
+      ranks.forEach(rk=>{
+        if(rk <= 2) return;
+        if(rk === 3 && thirdPos[gi] && thirdPos[gi] <= 2) return;
+        ok = false;
+      });
+      if(ok) out.qual[t] = true;
+    });
+  });
+  return out;
+}
+
+function best3Active(){
+  return !!profile && profile.format === 'groups' && profile.qualifiers === 8 && groups.length === 3;
+}
+
+function slotInfoFor(groupsArr, ko, slot){
+  const full = best3Resolve(groupsArr, ko);
+  if(full){
+    const t = full[slot];
+    return {team:t, gi:groupsArr.findIndex(g=>g.teams.includes(t))};
+  }
+  return best3Partial(groupsArr).slots[slot] || null;
+}
+
+function knockoutSidePending(groupsArr, m, side, ko){
+  const slot = (side === 'a') ? m.aSlot : m.bSlot;
+  if(!slot) return null;
+  if(side === 'a' ? m.confirmedA : m.confirmedB) return null;
+  const info = slotInfoFor(groupsArr, ko || knockout, slot);
+  if(!info || info.team || info.gi == null || info.gi < 0) return null;
+  const word = {F:'أول', S:'تاني', T:'تالت'}[slot[0]];
+  return `${word} م${info.gi+1} (لسه)`;
+}
+
 /* ---------- 8 qualifiers out of 3 groups: 3 firsts + 3 seconds + best 2 thirds ---------- */
 const SLOT_LABELS = {F1:'أحسن أول', F2:'تاني أحسن أول', F3:'أضعف أول', S1:'أقوى تاني', S2:'تاني أضعف تاني', S3:'أضعف تاني', T1:'أحسن تالت', T2:'تاني أحسن تالت (الأضعف)'};
 
@@ -2562,7 +2913,7 @@ function resetTierOrder(kind){
 function tierRankingHtml(){
   const done = groups.length===3 && groups.every(g=>g.teams.length>=3 && isGroupComplete(g));
   if(!done){
-    return '<div style="font-size:12px;color:var(--mut1);text-align:center;margin-bottom:10px;">ترتيب الأوايل والتواني والتوالت بيظهر بعد ما كل المجموعات تخلص (أو اختار الفرق بإيدك تحت)</div>';
+    return '<div style="font-size:12px;color:var(--mut1);text-align:center;margin-bottom:10px;">الترتيب الكامل للأوايل والتواني والتوالت بيظهر بعد ما كل المجموعات تخلص. أي مركز اتأكد بيتحط في الماتشات تحت فوراً (أو اختار الفريق بإيدك)</div>';
   }
   const titles = {F:'ترتيب الأوايل', S:'ترتيب التواني', T:'ترتيب التوالت (أول اتنين بس بيصعدوا)'};
   return ['F','S','T'].map(kind=>{
@@ -2689,10 +3040,12 @@ function swapsNoteHtml(){
 
 function knockoutPairResolved(groupsArr, m, ko){
   if(m.aSlot){
-    const map = best3Resolve(groupsArr, ko || knockout);
+    const k = ko || knockout;
+    const ia = m.confirmedA ? null : slotInfoFor(groupsArr, k, m.aSlot);
+    const ib = m.confirmedB ? null : slotInfoFor(groupsArr, k, m.bSlot);
     return {
-      a: m.confirmedA || (map ? map[m.aSlot] : null),
-      b: m.confirmedB || (map ? map[m.bSlot] : null)
+      a: m.confirmedA || (ia ? ia.team : null),
+      b: m.confirmedB || (ib ? ib.team : null)
     };
   }
   return {
@@ -2839,8 +3192,8 @@ function renderKnockout(){
         return `
           <div style="flex:1;min-width:120px;">
             <div style="font-size:10px;color:var(--mut1);text-align:center;margin-bottom:2px;">🔒 ${side==='a'?labelA:labelB}</div>
-            <div style="text-align:center;font-size:11px;color:var(--mut1);margin-bottom:4px;">لسه مش معروف - اتأكد يدوي:</div>
-            <select style="width:100%;" onchange="confirmQualifier(${i},'${side}',this.value)"><option value="">اختار فريق</option>${opts}</select>
+            <div style="text-align:center;font-size:13px;font-weight:700;color:var(--head);margin:4px 0 6px;">${knockoutSidePending(groups, m, side) ? '⏳ ' + knockoutSidePending(groups, m, side) : '🔒 لسه مش معروف'}</div>
+            <select style="width:100%;" onchange="confirmQualifier(${i},'${side}',this.value)"><option value="">اتأكد يدوي</option>${opts}</select>
           </div>
         `;
       }
@@ -3080,7 +3433,7 @@ function generateSemiFinal(){
     }
     const mkm = (a,b)=>({a, b, scoreA:'', scoreB:'', manualWinner:null});
     semifinal = {
-      semis: [mkm(w[0], w[3]), mkm(w[1], w[2])],
+      semis: [mkm(w[0], w[2]), mkm(w[1], w[3])],
       thirdEnabled: false,
       third: null,
       final: null
