@@ -452,6 +452,7 @@
   .sp-card{border:1.5px solid var(--bd1); border-radius:10px; padding:8px 10px; margin-bottom:8px; background:var(--unpaid-bg);}
   .sp-card.allpaid{background:var(--paidbg); border-color:var(--cash);}
   .sp-sub{display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-top:1px dashed var(--bd2); flex-wrap:wrap;}
+  .sync-box{background:var(--unpaid-bg); border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:13px;}
 </style>
 </head>
 <body>
@@ -467,6 +468,7 @@
 
   <div class="card" id="typeCard">
     <h2>0. البروفايل</h2>
+    <div id="syncBox" class="sync-box"></div>
     <div id="profileBox"></div>
   </div>
 
@@ -621,6 +623,15 @@
 let profile = null; // {name, teams, format:'groups'|'roundrobin', groupsBy:'manual'|'auto'|null, price, qualifiers}
 let wizard = null; // profile questions in progress (not saved)
 let activeTier = null; // selected tier colour while assigning (not saved)
+let activeUpdatedAt = 0; // when the active profile was last changed (for cloud sync)
+let tombstones = {}; // ids of profiles / archive entries deleted on purpose {id: time}
+let lastActiveJson = '';
+let applyingRemote = false;
+let syncUser = null, fb = null, fbReady = false, fbError = '';
+let syncState = 'off'; // off | pending | syncing | synced | error
+let syncError = '', lastSyncAt = 0, initialSyncDone = false, syncing = false, resync = false;
+let pushTimer = null, pushChain = Promise.resolve();
+let pushedProfiles = {}, pushedArchive = {}, pushedTomb = '';
 let savedProfiles = []; // other profiles, each {id, profile, data} with its full working state
 let thursdayTeams = [];
 let thursdayTierAssignments = {}; // teamName -> 'A1'|'A2'|...
@@ -730,15 +741,32 @@ function tapWinner(m, a, b, side){
 }
 
 
+let badgeBase = '';
+function cloudSuffix(){
+  if(!syncUser) return '';
+  if(syncState==='synced') return ' ☁️✓';
+  if(syncState==='syncing') return ' ☁️⏳';
+  if(syncState==='pending') return ' ☁️…';
+  if(syncState==='error') return ' ☁️⚠️';
+  return '';
+}
+function renderBadge(){
+  const b = document.getElementById('saveBadge');
+  if(b) b.textContent = badgeBase + cloudSuffix();
+}
 function setBadge(text){
-  document.getElementById('saveBadge').textContent = text;
+  badgeBase = text;
+  renderBadge();
 }
 
 function saveState(){
+  if(!applyingRemote) onLocalChange();
   try{
     const data = {
       profile: profile,
       savedProfiles: savedProfiles,
+      activeUpdatedAt: activeUpdatedAt,
+      tombstones: tombstones,
       thursdayTeams: thursdayTeams,
       thursdayTierAssignments: thursdayTierAssignments,
       teamsInput: document.getElementById('teamsInput').value,
@@ -793,6 +821,8 @@ function loadState(){
       const data = JSON.parse(raw);
       profile = data.profile || migrateOldType(data.currentType, data.thursdayMode, data.price);
       if(profile && !profile.id) profile.id = newProfileId();
+      activeUpdatedAt = data.activeUpdatedAt || Date.now();
+      tombstones = data.tombstones || {};
       savedProfiles = (data.savedProfiles || []).filter(x=>x && x.id && x.profile && x.data);
       thursdayTeams = data.thursdayTeams || [];
       thursdayTierAssignments = data.thursdayTierAssignments || {};
@@ -825,12 +855,15 @@ function loadState(){
       renderSemiFinal();
       renderRoundRobin();
       renderHistory();
+      lastActiveJson = activeJson();
       setBadge('اتحفظ ✓');
     } else {
       setBadge('بطولة جديدة');
       renderHistory();
       updateTypeUI();
       renderProfileBox();
+      activeUpdatedAt = Date.now();
+      lastActiveJson = activeJson();
     }
   }catch(e){
     console.error('Load error:', e);
@@ -839,6 +872,341 @@ function loadState(){
 }
 
 window.addEventListener('DOMContentLoaded', loadState);
+
+/* ================= cloud sync (Firebase) ================= */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCQIJhIyqJZfZF4nbH481gnFBdN_NbJKwA",
+  authDomain: "padel-organizer-455d9.firebaseapp.com",
+  projectId: "padel-organizer-455d9",
+  storageBucket: "padel-organizer-455d9.firebasestorage.app",
+  messagingSenderId: "769342602140",
+  appId: "1:769342602140:web:fdca59cfd6aae72eef2659",
+  measurementId: "G-V1R86FG27Q"
+};
+const FB_VERSION = '10.12.2';
+
+function activeJson(){
+  return profile ? JSON.stringify({profile:profile, data:snapshotWorking()}) : '';
+}
+
+function onLocalChange(){
+  const j = activeJson();
+  if(j !== lastActiveJson){
+    lastActiveJson = j;
+    activeUpdatedAt = Date.now();
+  }
+  scheduleSync();
+}
+
+function scheduleSync(){
+  if(!syncUser) return;
+  if(syncState !== 'syncing') syncState = 'pending';
+  renderBadge();
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushOnly, 2500);
+}
+
+function buildLocalEntities(){
+  const L = {profiles:{}, archive:{}, tomb:Object.assign({}, tombstones)};
+  if(profile){
+    L.profiles[profile.id] = {profile:profile, data:snapshotWorking(), updatedAt:activeUpdatedAt || Date.now()};
+  }
+  savedProfiles.forEach(x=>{
+    L.profiles[x.id] = {profile:x.profile, data:x.data, updatedAt:x.updatedAt || 0};
+  });
+  history.forEach(h=>{ if(h && h.id) L.archive[h.id] = h; });
+  return L;
+}
+
+function mergeEntities(L, R){
+  const tomb = Object.assign({}, R.tomb, L.tomb);
+  Object.keys(R.tomb || {}).forEach(id=>{ if((L.tomb||{})[id] != null) tomb[id] = Math.max(R.tomb[id], L.tomb[id]); });
+  const profiles = {};
+  const ids = new Set(Object.keys(L.profiles).concat(Object.keys(R.profiles)));
+  ids.forEach(id=>{
+    const a = L.profiles[id], b = R.profiles[id];
+    const pick = !a ? b : (!b ? a : (b.updatedAt > a.updatedAt ? b : a));
+    if(tomb[id] != null && tomb[id] >= pick.updatedAt) return;
+    profiles[id] = pick;
+  });
+  const archive = {};
+  Object.keys(L.archive).concat(Object.keys(R.archive)).forEach(id=>{
+    if(tomb[id] != null) return;
+    archive[id] = L.archive[id] || R.archive[id];
+  });
+  return {profiles, archive, tomb};
+}
+
+function applyMerged(M){
+  applyingRemote = true;
+  try{
+    tombstones = M.tomb || {};
+    history = Object.values(M.archive).sort((a,b)=>(Number(b.id)||0) - (Number(a.id)||0));
+    let activeId = profile ? profile.id : null;
+    if(activeId && !M.profiles[activeId]){
+      clearWorking();
+      profile = null;
+      activeId = null;
+    }
+    if(!activeId){
+      let best = null;
+      Object.values(M.profiles).forEach(e=>{ if(!best || e.updatedAt > best.updatedAt) best = e; });
+      if(best){
+        profile = JSON.parse(JSON.stringify(best.profile));
+        clearWorking();
+        applyWorking(best.data);
+        activeUpdatedAt = best.updatedAt;
+        activeId = profile.id;
+      }
+    } else {
+      const ent = M.profiles[activeId];
+      if(ent.updatedAt > (activeUpdatedAt || 0)){
+        profile = JSON.parse(JSON.stringify(ent.profile));
+        clearWorking();
+        applyWorking(ent.data);
+        activeUpdatedAt = ent.updatedAt;
+      }
+    }
+    savedProfiles = Object.values(M.profiles)
+      .filter(e=>e.profile.id !== activeId)
+      .map(e=>({id:e.profile.id, profile:e.profile, data:e.data, updatedAt:e.updatedAt}))
+      .sort((a,b)=>b.updatedAt - a.updatedAt);
+    lastActiveJson = activeJson();
+    updateTypeUI();
+    renderProfileBox();
+    updateTeamsHint();
+    renderHistory();
+    saveState();
+  } finally {
+    applyingRemote = false;
+  }
+}
+
+async function pullAll(){
+  const fs = fb.fs, db = fb.db, base = ['users', syncUser.uid];
+  const profSnap = await fs.getDocs(fs.collection(db, ...base, 'profiles'));
+  const arcSnap = await fs.getDocs(fs.collection(db, ...base, 'archive'));
+  const tombSnap = await fs.getDoc(fs.doc(db, ...base, 'meta', 'tombstones'));
+  const R = {profiles:{}, archive:{}, tomb:{}};
+  profSnap.forEach(d=>{
+    try{
+      const v = d.data();
+      const j = JSON.parse(v.json);
+      R.profiles[d.id] = {profile:j.profile, data:j.data, updatedAt:v.updatedAt || 0};
+    }catch(e){ console.warn('bad profile doc', d.id, e); }
+  });
+  arcSnap.forEach(d=>{
+    try{ R.archive[d.id] = JSON.parse(d.data().json); }
+    catch(e){ console.warn('bad archive doc', d.id, e); }
+  });
+  if(tombSnap.exists()) R.tomb = tombSnap.data().map || {};
+  return R;
+}
+
+async function pushDiff(){
+  const L = buildLocalEntities();
+  const fs = fb.fs, db = fb.db, base = ['users', syncUser.uid];
+  const ops = [];
+  Object.keys(L.profiles).forEach(id=>{
+    const e = L.profiles[id];
+    if(pushedProfiles[id] === e.updatedAt) return;
+    const json = JSON.stringify({profile:e.profile, data:e.data});
+    if(json.length > 900000){ syncError = `بروفايل "${e.profile.name}" كبير أوي ومقدرتش أرفعه`; return; }
+    ops.push({k:'set', ref:fs.doc(db, ...base, 'profiles', id), data:{json:json, updatedAt:e.updatedAt, name:e.profile.name || ''}, after:()=>{ pushedProfiles[id] = e.updatedAt; }});
+  });
+  Object.keys(pushedProfiles).forEach(id=>{
+    if(!L.profiles[id]) ops.push({k:'del', ref:fs.doc(db, ...base, 'profiles', id), after:()=>{ delete pushedProfiles[id]; }});
+  });
+  Object.keys(L.archive).forEach(id=>{
+    if(pushedArchive[id]) return;
+    const h = L.archive[id];
+    const json = JSON.stringify(h);
+    if(json.length > 900000) return;
+    ops.push({k:'set', ref:fs.doc(db, ...base, 'archive', id), data:{json:json, date:h.date || ''}, after:()=>{ pushedArchive[id] = 1; }});
+  });
+  Object.keys(pushedArchive).forEach(id=>{
+    if(!L.archive[id]) ops.push({k:'del', ref:fs.doc(db, ...base, 'archive', id), after:()=>{ delete pushedArchive[id]; }});
+  });
+  const tj = JSON.stringify(L.tomb);
+  if(tj !== pushedTomb){
+    ops.push({k:'set', ref:fs.doc(db, ...base, 'meta', 'tombstones'), data:{map:L.tomb}, after:()=>{ pushedTomb = tj; }});
+  }
+  for(let i=0; i<ops.length; i+=20){
+    const chunk = ops.slice(i, i+20);
+    const b = fs.writeBatch(db);
+    chunk.forEach(op=>{ if(op.k==='set') b.set(op.ref, op.data); else b.delete(op.ref); });
+    await b.commit();
+    chunk.forEach(op=>op.after && op.after());
+  }
+}
+
+function friendlySyncError(e){
+  const c = (e && (e.code || '')) + '';
+  if(c.includes('permission-denied')) return 'قواعد Firestore (Rules) مش مظبوطة أو مش منشورة';
+  if(c.includes('unavailable') || c.includes('network') || (e && /offline|network/i.test(e.message||''))) return 'مفيش اتصال بالنت';
+  if(c.includes('unauthenticated')) return 'لازم تسجل دخول تاني';
+  return (e && e.message) ? e.message : 'خطأ غير معروف';
+}
+
+async function fullSync(){
+  if(!syncUser || !fb) return;
+  if(syncing){ resync = true; return; }
+  syncing = true;
+  syncState = 'syncing';
+  syncError = '';
+  renderBadge();
+  renderSyncBox();
+  try{
+    const R = await pullAll();
+    const L = buildLocalEntities();
+    const M = mergeEntities(L, R);
+    applyMerged(M);
+    pushedProfiles = {};
+    Object.keys(R.profiles).forEach(id=>{ pushedProfiles[id] = R.profiles[id].updatedAt; });
+    pushedArchive = {};
+    Object.keys(R.archive).forEach(id=>{ pushedArchive[id] = 1; });
+    pushedTomb = JSON.stringify(R.tomb);
+    await pushDiff();
+    initialSyncDone = true;
+    syncState = syncError ? 'error' : 'synced';
+    lastSyncAt = Date.now();
+  }catch(e){
+    console.error('sync error', e);
+    syncState = 'error';
+    syncError = friendlySyncError(e);
+  }finally{
+    syncing = false;
+    renderBadge();
+    renderSyncBox();
+    if(resync){ resync = false; fullSync(); }
+  }
+}
+
+function pushOnly(){
+  if(!syncUser || !fb) return;
+  if(!initialSyncDone || syncing){ fullSync(); return; }
+  pushChain = pushChain.then(async ()=>{
+    try{
+      syncState = 'syncing';
+      syncError = '';
+      renderBadge();
+      await pushDiff();
+      syncState = syncError ? 'error' : 'synced';
+      lastSyncAt = Date.now();
+    }catch(e){
+      console.error('push error', e);
+      syncState = 'error';
+      syncError = friendlySyncError(e);
+    }
+    renderBadge();
+    renderSyncBox();
+  });
+}
+
+async function handleAuthChange(u){
+  if(u){
+    let storedUid = null;
+    try{ storedUid = localStorage.getItem('sync-uid'); }catch(e){}
+    const hasLocal = !!profile || savedProfiles.length > 0 || history.length > 0;
+    if(storedUid && storedUid !== u.uid && hasLocal){
+      if(!confirm('البيانات اللي على الموبايل ده كانت مربوطة بحساب جوجل تاني. ترفعها على الحساب ده؟ (لو لأ هيتسجل خروج)')){
+        try{ await fb.authM.signOut(fb.auth); }catch(e){}
+        return;
+      }
+    }
+    try{ localStorage.setItem('sync-uid', u.uid); }catch(e){}
+    syncUser = u;
+    initialSyncDone = false;
+    renderSyncBox();
+    fullSync();
+  } else {
+    syncUser = null;
+    syncState = 'off';
+    initialSyncDone = false;
+    pushedProfiles = {}; pushedArchive = {}; pushedTomb = '';
+    renderBadge();
+    renderSyncBox();
+  }
+}
+
+async function signInGoogle(){
+  if(!fb) return;
+  try{
+    const provider = new fb.authM.GoogleAuthProvider();
+    await fb.authM.signInWithPopup(fb.auth, provider);
+  }catch(e){
+    const c = (e && e.code) || '';
+    if(c.includes('popup-closed') || c.includes('cancelled')) return;
+    if(c.includes('popup-blocked')) alert('المتصفح منع نافذة تسجيل الدخول. اسمح بالنوافذ المنبثقة للموقع وجرب تاني.');
+    else if(c.includes('unauthorized-domain')) alert('الدومين مش مضاف في Firebase (Authentication ثم Settings ثم Authorized domains).');
+    else if(c.includes('operation-not-allowed')) alert('تسجيل الدخول بجوجل مش مفعّل في Firebase (Authentication ثم Sign-in method).');
+    else alert('فشل تسجيل الدخول: ' + (e && e.message ? e.message : c));
+  }
+}
+
+async function signOutCloud(){
+  if(!fb) return;
+  if(!confirm('هتسجل خروج من المزامنة. بياناتك هتفضل على الموبايل ده وعلى السحابة. متأكد؟')) return;
+  try{ await fb.authM.signOut(fb.auth); }catch(e){ console.error(e); }
+}
+
+function renderSyncBox(){
+  const box = document.getElementById('syncBox');
+  if(!box) return;
+  let html = '';
+  if(fbError){
+    html = `<div>☁️ المزامنة مش متاحة دلوقتي: <span style="color:var(--mut2);">${fbError}</span></div>
+      <div style="color:var(--mut2);font-size:12px;margin-top:2px;">التطبيق شغال عادي وبيحفظ على الموبايل ده بس.</div>
+      <div class="row-inline"><button class="ghost" onclick="initFirebase()">🔄 جرّب تاني</button></div>`;
+  } else if(!fbReady){
+    html = `<div style="color:var(--mut2);">☁️ جاري تحميل المزامنة...</div>`;
+  } else if(!syncUser){
+    html = `<div>☁️ سجّل دخول بجوجل عشان بياناتك تتحفظ على السحابة وتفتحها من أي موبايل.</div>
+      <div class="row-inline"><button class="primary" onclick="signInGoogle()">سجّل دخول بجوجل</button></div>`;
+  } else {
+    let st = '';
+    if(syncState==='syncing') st = '⏳ جاري المزامنة...';
+    else if(syncState==='error') st = `⚠️ ${syncError || 'فشلت المزامنة'} - هنحاول تاني`;
+    else if(syncState==='pending') st = '… في تغييرات هتتحفظ خلال ثواني';
+    else if(lastSyncAt) st = '✓ متزامن (آخر مزامنة ' + new Date(lastSyncAt).toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'}) + ')';
+    html = `<div style="font-weight:700;">☁️ ${syncUser.email || 'متصل'}</div>
+      <div style="color:${syncState==='error'?'var(--vodafone)':'var(--mut2)'};font-size:12.5px;margin-top:2px;">${st}</div>
+      <div class="row-inline">
+        <button class="ghost" onclick="fullSync()">🔄 زامن دلوقتي</button>
+        <button class="ghost" onclick="signOutCloud()">تسجيل خروج</button>
+      </div>`;
+  }
+  box.innerHTML = html;
+}
+
+async function initFirebase(){
+  fbError = '';
+  renderSyncBox();
+  try{
+    if(!fb){
+      const base = `https://www.gstatic.com/firebasejs/${FB_VERSION}/`;
+      const mods = await Promise.all([import(base + 'firebase-app.js'), import(base + 'firebase-auth.js'), import(base + 'firebase-firestore.js')]);
+      const app = mods[0].initializeApp(FIREBASE_CONFIG);
+      const auth = mods[1].getAuth(app);
+      const db = mods[2].initializeFirestore(app, {experimentalAutoDetectLongPolling:true});
+      fb = {auth:auth, db:db, authM:mods[1], fs:mods[2]};
+      mods[1].onAuthStateChanged(auth, handleAuthChange);
+    }
+    fbReady = true;
+  }catch(e){
+    console.error('firebase load error', e);
+    fbReady = false;
+    fbError = 'تعذر تحميل أدوات جوجل (النت ضعيف أو محجوب)';
+  }
+  renderSyncBox();
+}
+
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && syncUser) fullSync(); });
+window.addEventListener('online', ()=>{ if(!fb) initFirebase(); else if(syncUser) fullSync(); });
+setInterval(()=>{ if(syncUser && !document.hidden) fullSync(); }, 90000);
+window.addEventListener('DOMContentLoaded', ()=>{ renderSyncBox(); setTimeout(initFirebase, 400); });
+
+
 
 /* ---------- theme (dark / light) ---------- */
 function applyThemeUI(){
@@ -1025,7 +1393,7 @@ function snapshotWorking(){
 function stashCurrent(){
   if(!profile) return;
   savedProfiles = savedProfiles.filter(x=>x.id!==profile.id);
-  savedProfiles.unshift({id:profile.id, profile:profile, data:snapshotWorking()});
+  savedProfiles.unshift({id:profile.id, profile:profile, data:snapshotWorking(), updatedAt:activeUpdatedAt || Date.now()});
 }
 
 function clearWorking(){
@@ -1100,6 +1468,8 @@ function switchProfile(id){
   clearWorking();
   profile = target.profile;
   applyWorking(target.data);
+  activeUpdatedAt = target.updatedAt || Date.now();
+  lastActiveJson = activeJson();
   refreshAfterProfileChange();
 }
 
@@ -1108,6 +1478,7 @@ function deleteProfile(id){
   const entry = isActive ? {profile:profile} : savedProfiles.find(x=>x.id===id);
   if(!entry) return;
   if(!confirm(`هتمسح بروفايل "${entry.profile.name}" بكل بياناته (اللاعبين والمجموعات والنتايج) نهائي. الأرشيف مش هيتأثر، فلو عاوز تحتفظ بالنتايج احفظها في الأرشيف الأول. متأكد؟`)) return;
+  tombstones[id] = Date.now();
   if(isActive){
     clearWorking();
     profile = null;
@@ -1115,7 +1486,9 @@ function deleteProfile(id){
       const next = savedProfiles.shift();
       profile = next.profile;
       applyWorking(next.data);
+      activeUpdatedAt = next.updatedAt || Date.now();
     }
+    lastActiveJson = activeJson();
   } else {
     savedProfiles = savedProfiles.filter(x=>x.id!==id);
   }
@@ -3313,6 +3686,7 @@ function importBackup(file){
 function deleteHistoryEntry(id){
   if(!confirm('هيتمسح نهائي من الأرشيف، متأكد؟')) return;
   history = history.filter(h=>h.id!==id);
+  tombstones[id] = Date.now();
   saveState();
   renderHistory();
 }

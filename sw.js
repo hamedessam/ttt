@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hesab-tournament-v32';
+const CACHE_NAME = 'hesab-tournament-v33';
 const FILES_TO_CACHE = [
   './index.html',
   './manifest.json',
@@ -22,14 +22,26 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// Only our own files, the fonts and the Firebase SDK scripts are cached.
+// Everything else (Firestore, login, any POST) goes straight to the network untouched.
+function shouldCache(request){
+  if(request.method !== 'GET') return false;
+  const url = new URL(request.url);
+  if(url.origin === self.location.origin) return true;
+  if(url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') return true;
+  if(url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/')) return true;
+  return false;
+}
+
 self.addEventListener('fetch', (event) => {
+  if(!shouldCache(event.request)) return;
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return cached || fetch(event.request).then((response) => {
-        return caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, response.clone());
-          return response;
-        });
+        if(!response || (response.status !== 200 && response.type !== 'opaque')) return response;
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        return response;
       }).catch(() => cached);
     })
   );
